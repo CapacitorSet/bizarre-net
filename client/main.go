@@ -3,30 +3,24 @@ package main
 import (
 	"fmt"
 	bizarre "github.com/CapacitorSet/bizarre-net"
+	"github.com/CapacitorSet/bizarre-net/udp"
 	"log"
 	"net"
 )
 
 func main() {
-	config, err := ReadConfig("config.toml")
+	config, md, err := bizarre.ReadConfig("config.toml")
 	if err != nil {
 		log.Fatal(err)
 	}
-	iface, err := bizarre.CreateInterface(bizarre.InterfaceConfig{
-		Prefix:  config.TunPrefix,
-		Address: config.TunIP,
-	})
+	iface, err := bizarre.CreateInterface(config.TUN)
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("%s up.\n", iface.Name)
 	defer iface.Close()
 
-	serverAddr, err := net.ResolveUDPAddr("udp", config.ServerIP)
-	if err != nil {
-		log.Fatal(err)
-	}
-	udpConn, err := net.DialUDP("udp", nil, serverAddr)
+	udpConn, err := udp.Transport{}.Dial(config, md)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -44,21 +38,21 @@ func main() {
 	}
 }
 
-func udpLoop(udpConn *net.UDPConn, iface bizarre.Interface, serverDoneChan chan error) {
+func udpLoop(udpConn net.Conn, iface bizarre.Interface, serverDoneChan chan error) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
 		// new content in the socket that we're listening for new packets.
 
 		// Note: `buffer` is not being reset between runs, so you must read only `n` bytes.
-		n, addr, err := udpConn.ReadFrom(buffer)
+		n, err := udpConn.Read(buffer)
 		if err != nil {
 			log.Println("udpLoop: " + err.Error())
 			serverDoneChan <- err
 			break
 		}
 
-		fmt.Printf("\nnet > bytes=%d from=%s\n", n, addr.String())
+		fmt.Printf("\nnet > bytes=%d\n", n)
 		pkt, isIPv6 := bizarre.TryParse(buffer[:n])
 		bizarre.PrintPacket(pkt, isIPv6)
 
@@ -73,7 +67,7 @@ func udpLoop(udpConn *net.UDPConn, iface bizarre.Interface, serverDoneChan chan 
 	}
 }
 
-func tunLoop(udpConn *net.UDPConn, iface bizarre.Interface, serverDoneChan chan error) {
+func tunLoop(udpConn net.Conn, iface bizarre.Interface, serverDoneChan chan error) {
 	buffer := make([]byte, 4096)
 	for {
 		n, err := iface.Read(buffer)

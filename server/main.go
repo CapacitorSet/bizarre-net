@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	bizarre "github.com/CapacitorSet/bizarre-net"
+	"github.com/CapacitorSet/bizarre-net/udp"
 	"log"
 	"net"
 )
@@ -11,25 +12,18 @@ import (
 var clientUdpAddr map[string]net.Addr
 
 func main() {
-	config, err := ReadConfig("config.toml")
+	config, md, err := bizarre.ReadConfig("config.toml")
 	if err != nil {
 		log.Fatal(err)
 	}
-	iface, err := bizarre.CreateInterface(bizarre.InterfaceConfig{
-		Prefix:  config.TunPrefix,
-		Address: config.TunIP,
-	})
+	iface, err := bizarre.CreateInterface(config.TUN)
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("%s up with IP %s.\n", iface.Name, iface.IPNet.String())
 	defer iface.Close()
 
-	udpListenAddr, err := net.ResolveUDPAddr("udp", config.ListenIP)
-	if err != nil {
-		log.Fatal(err)
-	}
-	udpSrv, err := net.ListenUDP("udp", udpListenAddr)
+	udpSrv, err := udp.Transport{}.Listen(config, md)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -47,7 +41,7 @@ func main() {
 	}
 }
 
-func udpLoop(udpSrv *net.UDPConn, serverDoneChan chan error, iface bizarre.Interface) {
+func udpLoop(udpSrv net.PacketConn, serverDoneChan chan error, iface bizarre.Interface) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
@@ -85,7 +79,7 @@ func udpLoop(udpSrv *net.UDPConn, serverDoneChan chan error, iface bizarre.Inter
 	}
 }
 
-func tunLoop(udpSrv *net.UDPConn, iface bizarre.Interface) {
+func tunLoop(udpSrv net.PacketConn, iface bizarre.Interface) {
 	buffer := make([]byte, 4096)
 	for {
 		n, err := iface.Read(buffer)

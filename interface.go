@@ -10,9 +10,9 @@ import (
 
 // Functions for setting up the network interface
 
-type InterfaceConfig struct {
+type TUNConfig struct {
 	Prefix string // The prefix of the network interface, eg. "bizarre" will create bizarre0, bizarre1...
-	Address string // The address and netmask in CIDR notation, eg. "10.0.0.1/24"
+	IP     string // The address and netmask in CIDR notation, eg. "10.0.0.1/24"
 }
 
 type Interface struct {
@@ -42,7 +42,7 @@ func findIfaceName(prefix string) (string, error) {
 	return prefix + strconv.Itoa(int(bizarreIfaceNum)), nil
 }
 
-func CreateInterface(config InterfaceConfig) (Interface, error) {
+func CreateInterface(config TUNConfig) (Interface, error) {
 	var iface Interface
 
 	name, err := findIfaceName(config.Prefix)
@@ -65,7 +65,7 @@ func CreateInterface(config InterfaceConfig) (Interface, error) {
 	if err != nil {
 		return Interface{}, err
 	}
-	ip, subnet, err := net.ParseCIDR(config.Address)
+	ip, subnet, err := net.ParseCIDR(config.IP)
 	if err != nil {
 		return Interface{}, err
 	}
