@@ -1,0 +1,3 @@
+TunPrefix = "bizarre"
+TunIP = "20.20.20.1/24"
+ListenIP = "192.168.1.2:1917"
