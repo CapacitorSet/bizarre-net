@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	bizarre "github.com/CapacitorSet/bizarre-net"
-	"github.com/CapacitorSet/bizarre-net/udp"
+	"github.com/CapacitorSet/bizarre-net/cat"
 	"log"
 	"net"
 )
 
-// Maps the in-tunnel source IP of the host to its UDP source
-var clientUdpAddr map[string]net.Addr
+// Maps the in-tunnel source IP of the host to its transport (eg. UDP) address
+var clientTransportAddr map[string]net.Addr
 
 func main() {
 	config, md, err := bizarre.ReadConfig("config.toml")
@@ -23,17 +23,18 @@ func main() {
 	log.Printf("%s up with IP %s.\n", iface.Name, iface.IPNet.String())
 	defer iface.Close()
 
-	udpSrv, err := udp.Transport{}.Listen(config, md)
+	// server, err := udp.Transport{}.Listen(config, md)
+	server, err := cat.Transport{}.Listen(config, md)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer udpSrv.Close()
+	defer server.Close()
 
-	clientUdpAddr = make(map[string]net.Addr)
+	clientTransportAddr = make(map[string]net.Addr)
 	serverDoneChan := make(chan error, 1)
 
-	go tunLoop(udpSrv, iface)
-	go udpLoop(udpSrv, serverDoneChan, iface)
+	go tunLoop(server, iface)
+	go transportLoop(server, serverDoneChan, iface)
 
 	select {
 	case err = <-serverDoneChan:
@@ -41,7 +42,7 @@ func main() {
 	}
 }
 
-func udpLoop(udpSrv net.PacketConn, serverDoneChan chan error, iface bizarre.Interface) {
+func transportLoop(udpSrv net.PacketConn, serverDoneChan chan error, iface bizarre.Interface) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
@@ -63,7 +64,7 @@ func udpLoop(udpSrv net.PacketConn, serverDoneChan chan error, iface bizarre.Int
 		// Inspect the source address so packet responses (syn-akcs, etc) can be sent to the host
 		netFlow := pkt.NetworkLayer().NetworkFlow()
 		tunnelSrc, _ := netFlow.Endpoints()
-		clientUdpAddr[tunnelSrc.String()] = udpSrc
+		clientTransportAddr[tunnelSrc.String()] = udpSrc
 
 		fmt.Printf("\nnet > bytes=%d from=%s\n", n, udpSrc.String())
 		bizarre.PrintPacket(pkt, isIPv6)
@@ -79,7 +80,7 @@ func udpLoop(udpSrv net.PacketConn, serverDoneChan chan error, iface bizarre.Int
 	}
 }
 
-func tunLoop(udpSrv net.PacketConn, iface bizarre.Interface) {
+func tunLoop(server net.PacketConn, iface bizarre.Interface) {
 	buffer := make([]byte, 4096)
 	for {
 		n, err := iface.Read(buffer)
@@ -100,13 +101,13 @@ func tunLoop(udpSrv net.PacketConn, iface bizarre.Interface) {
 		}
 		netFlow := pkt.NetworkLayer().NetworkFlow()
 		_, tunnelDst := netFlow.Endpoints()
-		udpAddr := clientUdpAddr[tunnelDst.String()]
-		if udpAddr == nil {
-			fmt.Print("No client UDP address found, skipping\n")
+		transportAddr := clientTransportAddr[tunnelDst.String()]
+		if transportAddr == nil {
+			fmt.Print("No client transport address found, skipping\n")
 			continue
 		}
 
-		_, err = udpSrv.WriteTo(buffer[:n], udpAddr)
+		_, err = server.WriteTo(buffer[:n], transportAddr)
 		if err != nil {
 			log.Fatal(err)
 		}

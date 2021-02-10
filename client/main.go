@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	bizarre "github.com/CapacitorSet/bizarre-net"
-	"github.com/CapacitorSet/bizarre-net/udp"
+	"github.com/CapacitorSet/bizarre-net/cat"
 	"log"
 	"net"
 )
@@ -20,15 +20,16 @@ func main() {
 	log.Printf("%s up.\n", iface.Name)
 	defer iface.Close()
 
-	udpConn, err := udp.Transport{}.Dial(config, md)
+	// client, err := udp.Transport{}.Dial(config, md)
+	client, err := cat.Transport{}.Dial(config, md)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	serverDoneChan := make(chan error, 1)
 
-	go tunLoop(udpConn, iface, serverDoneChan)
-	go udpLoop(udpConn, iface, serverDoneChan)
+	go tunLoop(client, iface, serverDoneChan)
+	go transportLoop(client, iface, serverDoneChan)
 
 	for {
 		select {
@@ -38,27 +39,32 @@ func main() {
 	}
 }
 
-func udpLoop(udpConn net.Conn, iface bizarre.Interface, serverDoneChan chan error) {
+func transportLoop(client net.Conn, iface bizarre.Interface, serverDoneChan chan error) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
 		// new content in the socket that we're listening for new packets.
 
 		// Note: `buffer` is not being reset between runs, so you must read only `n` bytes.
-		n, err := udpConn.Read(buffer)
+		n, err := client.Read(buffer)
 		if err != nil {
-			log.Println("udpLoop: " + err.Error())
+			log.Println("transportLoop: " + err.Error())
 			serverDoneChan <- err
 			break
 		}
 
 		fmt.Printf("\nnet > bytes=%d\n", n)
 		pkt, isIPv6 := bizarre.TryParse(buffer[:n])
-		bizarre.PrintPacket(pkt, isIPv6)
+		if pkt != nil {
+			bizarre.PrintPacket(pkt, isIPv6)
+		} else {
+			fmt.Println("Unknown packet.")
+		}
 
+		// todo: handle iface write fails gracefully if not an IP packet (buffer[0] & 0xF0 != 0x4, 0x6)
 		_, err = iface.Write(buffer[:n])
 		if err != nil {
-			log.Println("udpLoop: " + err.Error())
+			log.Println("transportLoop: " + err.Error())
 			serverDoneChan <- err
 			break
 		}
@@ -67,7 +73,7 @@ func udpLoop(udpConn net.Conn, iface bizarre.Interface, serverDoneChan chan erro
 	}
 }
 
-func tunLoop(udpConn net.Conn, iface bizarre.Interface, serverDoneChan chan error) {
+func tunLoop(client net.Conn, iface bizarre.Interface, serverDoneChan chan error) {
 	buffer := make([]byte, 4096)
 	for {
 		n, err := iface.Read(buffer)
@@ -84,7 +90,7 @@ func tunLoop(udpConn net.Conn, iface bizarre.Interface, serverDoneChan chan erro
 			continue
 		}
 
-		udpConn.Write(buffer[:n])
+		client.Write(buffer[:n])
 		fmt.Printf("net > bytes=%d\n", n)
 	}
 }

@@ -6,8 +6,8 @@ import (
 
 type Config struct {
 	TUN TUNConfig `toml:"tun"`
-	// UDP udp.Config `toml:"udp"`
 	UDP toml.Primitive
+	Cat toml.Primitive
 }
 
 func ReadConfig(file string) (Config, toml.MetaData, error) {
