@@ -1,12 +1,26 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	bizarre "github.com/CapacitorSet/bizarre-net"
 	"github.com/CapacitorSet/bizarre-net/cat"
+	"github.com/CapacitorSet/bizarre-net/udp"
 	"log"
 	"net"
+	"strings"
 )
+
+func getTransport(config bizarre.Config) (bizarre.Transport, error) {
+	switch strings.ToLower(config.Transport) {
+	case "udp":
+		return udp.Transport{}, nil
+	case "cat":
+		return cat.Transport{}, nil
+	default:
+		return nil, errors.New("no such transport: " + config.Transport)
+	}
+}
 
 // Maps the in-tunnel source IP of the host to its transport (eg. UDP) address
 var clientTransportAddr map[string]net.Addr
@@ -23,8 +37,11 @@ func main() {
 	log.Printf("%s up with IP %s.\n", iface.Name, iface.IPNet.String())
 	defer iface.Close()
 
-	// server, err := udp.Transport{}.Listen(config, md)
-	server, err := cat.Transport{}.Listen(config, md)
+	transport, err := getTransport(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	server, err := transport.Listen(config, md)
 	if err != nil {
 		log.Fatal(err)
 	}

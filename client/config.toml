@@ -1,3 +1,5 @@
+Transport = "udp"
+
 [tun]
 Prefix = "bizarre"
 IP = "20.20.20.2/24"

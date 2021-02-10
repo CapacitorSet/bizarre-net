@@ -1,12 +1,26 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	bizarre "github.com/CapacitorSet/bizarre-net"
 	"github.com/CapacitorSet/bizarre-net/cat"
+	"github.com/CapacitorSet/bizarre-net/udp"
 	"log"
 	"net"
+	"strings"
 )
+
+func getTransport(config bizarre.Config) (bizarre.Transport, error) {
+	switch strings.ToLower(config.Transport) {
+	case "udp":
+		return udp.Transport{}, nil
+	case "cat":
+		return cat.Transport{}, nil
+	default:
+		return nil, errors.New("no such transport: " + config.Transport)
+	}
+}
 
 func main() {
 	config, md, err := bizarre.ReadConfig("config.toml")
@@ -20,8 +34,11 @@ func main() {
 	log.Printf("%s up.\n", iface.Name)
 	defer iface.Close()
 
-	// client, err := udp.Transport{}.Dial(config, md)
-	client, err := cat.Transport{}.Dial(config, md)
+	transport, err := getTransport(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	client, err := transport.Dial(config, md)
 	if err != nil {
 		log.Fatal(err)
 	}
