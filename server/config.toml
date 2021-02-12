@@ -1,4 +1,4 @@
-Transport = "udp"
+Transport = "socket"
 
 [tun]
 Prefix = "bizarre"
@@ -6,3 +6,6 @@ IP = "20.20.20.1/24"
 
 [udp]
 IP = "192.168.1.2:1917"
+
+[socket]
+Socket = "/tmp/bizarre.sock"

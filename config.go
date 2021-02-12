@@ -10,6 +10,7 @@ type Config struct {
 	Transport string
 	UDP       toml.Primitive
 	Cat       toml.Primitive
+	Socket    toml.Primitive
 }
 
 func ReadConfig(file string) (Config, toml.MetaData, error) {

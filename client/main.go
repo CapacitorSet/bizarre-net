@@ -5,6 +5,7 @@ import (
 	"fmt"
 	bizarre "github.com/CapacitorSet/bizarre-net"
 	"github.com/CapacitorSet/bizarre-net/cat"
+	"github.com/CapacitorSet/bizarre-net/socket"
 	"github.com/CapacitorSet/bizarre-net/udp"
 	"log"
 	"net"
@@ -17,6 +18,8 @@ func getTransport(config bizarre.Config) (bizarre.Transport, error) {
 		return udp.Transport{}, nil
 	case "cat":
 		return cat.Transport{}, nil
+	case "socket":
+		return socket.Transport{}, nil
 	default:
 		return nil, errors.New("no such transport: " + config.Transport)
 	}

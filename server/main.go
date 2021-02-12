@@ -5,6 +5,7 @@ import (
 	"fmt"
 	bizarre "github.com/CapacitorSet/bizarre-net"
 	"github.com/CapacitorSet/bizarre-net/cat"
+	"github.com/CapacitorSet/bizarre-net/socket"
 	"github.com/CapacitorSet/bizarre-net/udp"
 	"log"
 	"net"
@@ -17,41 +18,62 @@ func getTransport(config bizarre.Config) (bizarre.Transport, error) {
 		return udp.Transport{}, nil
 	case "cat":
 		return cat.Transport{}, nil
+	case "socket":
+		return socket.Transport{}, nil
 	default:
 		return nil, errors.New("no such transport: " + config.Transport)
 	}
 }
 
-// Maps the in-tunnel source IP of the host to its transport (eg. UDP) address
-var clientTransportAddr map[string]net.Addr
+// Maps the in-tunnel source IP of the host to its transport address (used in WriteTo for datagram transports)
+var clientAddr map[string]net.Addr
+
+// Maps the in-tunnel source IP of the host to its connection (used in Write for stream transports)
+var clientConn map[string]net.Conn
+
+// The TUN interface
+var iface bizarre.Interface
 
 func main() {
 	config, md, err := bizarre.ReadConfig("config.toml")
 	if err != nil {
 		log.Fatal(err)
 	}
-	iface, err := bizarre.CreateInterface(config.TUN)
+	iface, err = bizarre.CreateInterface(config.TUN)
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("%s up with IP %s.\n", iface.Name, iface.IPNet.String())
 	defer iface.Close()
 
-	transport, err := getTransport(config)
+	genericTransport, err := getTransport(config)
 	if err != nil {
 		log.Fatal(err)
 	}
-	server, err := transport.Listen(config, md)
-	if err != nil {
-		log.Fatal(err)
+
+	serverDoneChan := make(chan error)
+	switch transport := genericTransport.(type) {
+	case bizarre.StreamTransport:
+		clientConn = make(map[string]net.Conn)
+		server, err := transport.Listen(config, md)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer server.Close()
+		go streamLoop(server, serverDoneChan)
+		go tunStreamLoop(iface)
+	case bizarre.DatagramTransport:
+		clientAddr = make(map[string]net.Addr)
+		server, err := transport.Listen(config, md)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer server.Close()
+		go datagramLoop(server, serverDoneChan)
+		go tunDatagramLoop(server, iface)
+	default:
+		log.Fatalf("transport %T implements neither StreamTransport nor DatagramTransport", transport)
 	}
-	defer server.Close()
-
-	clientTransportAddr = make(map[string]net.Addr)
-	serverDoneChan := make(chan error, 1)
-
-	go tunLoop(server, iface)
-	go transportLoop(server, serverDoneChan, iface)
 
 	select {
 	case err = <-serverDoneChan:
@@ -59,75 +81,25 @@ func main() {
 	}
 }
 
-func transportLoop(udpSrv net.PacketConn, serverDoneChan chan error, iface bizarre.Interface) {
-	buffer := make([]byte, 1500)
-	for {
-		// By reading from the connection into the buffer, we block until there's
-		// new content in the socket that we're listening for new packets.
-
-		// Note: `buffer` is not being reset between runs, so you must read only `n` bytes.
-		n, udpSrc, err := udpSrv.ReadFrom(buffer)
-		if err != nil {
-			log.Println(err)
-			serverDoneChan <- err
-			break
-		}
-
-		pkt, isIPv6 := bizarre.TryParse(buffer[:n])
-		if pkt == nil {
-			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
-			continue
-		}
-		// Inspect the source address so packet responses (syn-akcs, etc) can be sent to the host
-		netFlow := pkt.NetworkLayer().NetworkFlow()
-		tunnelSrc, _ := netFlow.Endpoints()
-		clientTransportAddr[tunnelSrc.String()] = udpSrc
-
-		fmt.Printf("\nnet > bytes=%d from=%s\n", n, udpSrc.String())
-		bizarre.PrintPacket(pkt, isIPv6)
-
-		_, err = iface.Write(buffer[:n])
-		if err != nil {
-			log.Print("sendto: ", err)
-			serverDoneChan <- err
-			break
-		}
-
-		fmt.Printf("> %s bytes=%d to=%s\n", iface.Name, n, udpSrc.String())
+func processNetPkt(packet []byte, remoteAddr net.Addr, registerClient func(string)) error {
+	pkt, isIPv6 := bizarre.TryParse(packet)
+	if pkt == nil {
+		log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
+		return nil
 	}
-}
+	// Inspect the source address so packet responses (syn-acks, etc) can be sent to the host
+	netFlow := pkt.NetworkLayer().NetworkFlow()
+	tunnelSrc, _ := netFlow.Endpoints()
+	registerClient(tunnelSrc.String())
 
-func tunLoop(server net.PacketConn, iface bizarre.Interface) {
-	buffer := make([]byte, 4096)
-	for {
-		n, err := iface.Read(buffer)
-		if err != nil {
-			log.Printf("tunLoop: " + err.Error())
-			continue
-		}
-		fmt.Printf("\n%s > bytes=%d\n", iface.Name, n)
-		pkt, isIPv6 := bizarre.TryParse(buffer[:n])
-		if pkt == nil {
-			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
-			continue
-		}
-		bizarre.PrintPacket(pkt, isIPv6)
-		if isIPv6 {
-			log.Println("Skipping IPv6 pkt")
-			continue
-		}
-		netFlow := pkt.NetworkLayer().NetworkFlow()
-		_, tunnelDst := netFlow.Endpoints()
-		transportAddr := clientTransportAddr[tunnelDst.String()]
-		if transportAddr == nil {
-			fmt.Print("No client transport address found, skipping\n")
-			continue
-		}
+	fmt.Printf("\nnet > bytes=%d from=%s\n", len(packet), remoteAddr.String())
+	bizarre.PrintPacket(pkt, isIPv6)
 
-		_, err = server.WriteTo(buffer[:n], transportAddr)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("> net bytes=%d\n", n)
+	_, err := iface.Write(packet)
+	if err != nil {
+		log.Print("sendto: ", err)
+		return err
 	}
+	fmt.Printf("> %s bytes=%d to=%s\n", iface.Name, len(packet), remoteAddr.String())
+	return nil
 }
