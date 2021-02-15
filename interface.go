@@ -17,8 +17,8 @@ type TUNConfig struct {
 
 type Interface struct {
 	*water.Interface // The TUN
-	Name string
-	*net.IPNet // IP and netmask
+	Name             string
+	*net.IPNet       // IP and netmask
 }
 
 func findIfaceName(prefix string) (string, error) {
@@ -30,7 +30,7 @@ func findIfaceName(prefix string) (string, error) {
 	bizarreIfaceNum := int64(0)
 	for _, iface := range ifaces {
 		if strings.HasPrefix(iface.Name, prefix) {
-			ifaceNum, err := strconv.ParseInt(iface.Name[7:], 10, 16)
+			ifaceNum, err := strconv.ParseInt(iface.Name[len(prefix):], 10, 16)
 			if err != nil {
 				continue
 			}
