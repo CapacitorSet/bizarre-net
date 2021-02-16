@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Functions for setting up the network interface
@@ -42,8 +43,15 @@ func findIfaceName(prefix string) (string, error) {
 	return prefix + strconv.Itoa(int(bizarreIfaceNum)), nil
 }
 
-func CreateInterface(config TUNConfig) (Interface, error) {
+// ioctlLock is an optional mutex to lock ioctl (i.e. TUN creation) calls. It avoids crashes when launching eg. both
+//   a client and a server at the same time in tests
+func CreateInterface(config TUNConfig, ioctlLock *sync.Mutex) (Interface, error) {
 	var iface Interface
+
+	if ioctlLock != nil {
+		ioctlLock.Lock()
+		defer ioctlLock.Unlock()
+	}
 
 	name, err := findIfaceName(config.Prefix)
 	if err != nil {
