@@ -59,6 +59,8 @@ When troubleshooting you might want to ask yourself these questions:
  - Are the packets being forwarded? Try sniffing the client TUN, the server TUN, and the Internet interface for the server.
  - Are the packets being masqueraded (i.e. do they come from the server IP and not from the tunnel IP when leaving the server)? Try sniffing the Internet interface for the server.
 
+When developing, using network namespaces allows for multiple "clean" environments (no firewalls or iptables rules). `test/server-setup.sh` followed by `test/client-setup.sh` creates an environment with a "server" namespace `srvns` and a "client" namespace `clins`, connected by a virtual Ethernet cable `seth0-veth0`, respectively with the address 192.168.1.2/24 and 192.168.1.3/24. With `test/server-launch.sh` and `test/client-launch.sh` you can then open a shell into those namespaces. Finally, [here](https://iximiuz.com/en/posts/container-networking-is-simple/)'s a good tutorial about network namespaces.
+
 ## Licenses
 
 This project is currently "all rights reserved", but will eventually get a proper license when it works.
