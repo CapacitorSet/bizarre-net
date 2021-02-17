@@ -55,3 +55,22 @@ func PrintPacket(pkt gopacket.Packet, isIPv6 bool) {
 		fmt.Printf("udp: %s:%d to %s:%d\n", srcStr, udp.SrcPort, dstStr, udp.DstPort)
 	}
 }
+
+func IsChatter(packet gopacket.Packet) bool {
+	// Todo: match broadcast addresses instead
+	// LLMNR
+	if udpLayer := packet.Layer(layers.LayerTypeUDP); udpLayer != nil {
+		if udpLayer.(*layers.UDP).SrcPort == 5355 {
+			return true
+		}
+	} else if packet.Layer(layers.LayerTypeIGMP) != nil {
+		return true
+	} else if packet.Layer(layers.LayerTypeICMPv6NeighborSolicitation) != nil {
+		return true
+	} else if packet.Layer(layers.LayerTypeICMPv6RouterSolicitation) != nil {
+		return true
+	} else if packet.Layer(layers.LayerTypeMLDv2MulticastListenerReport) != nil {
+		return true
+	}
+	return false
+}

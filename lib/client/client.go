@@ -77,13 +77,20 @@ func transportLoop(client net.Conn, iface bizarre_net.Interface, serverDoneChan 
 			break
 		}
 
-		// fmt.Printf("\nnet > bytes=%d\n", n)
 		pkt, isIPv6 := bizarre_net.TryParse(buffer[:n])
-		if pkt != nil {
-			bizarre_net.PrintPacket(pkt, isIPv6)
-		} else {
-			fmt.Println("Unknown packet.")
+		if pkt == nil {
+			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
+			continue
 		}
+		if bizarre_net.IsChatter(pkt) {
+			continue
+		}
+		if isIPv6 {
+			fmt.Println("Skipping IPv6 pkt")
+			continue
+		}
+		fmt.Printf("\nnet > bytes=%d\n", n)
+		bizarre_net.PrintPacket(pkt, isIPv6)
 
 		// todo: handle iface write fails gracefully if not an IP packet (buffer[0] & 0xF0 != 0x4, 0x6)
 		_, err = iface.Write(buffer[:n])
@@ -106,13 +113,20 @@ func tunLoop(client net.Conn, iface bizarre_net.Interface, serverDoneChan chan e
 			serverDoneChan <- err
 			break
 		}
-		fmt.Printf("\n%s > bytes=%d\n", iface.Name, n)
+
 		pkt, isIPv6 := bizarre_net.TryParse(buffer[:n])
-		bizarre_net.PrintPacket(pkt, isIPv6)
+		if pkt == nil {
+			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
+			continue
+		}
+		if bizarre_net.IsChatter(pkt) {
+			continue
+		}
 		if isIPv6 {
 			fmt.Println("Skipping IPv6 pkt")
 			continue
 		}
+		fmt.Printf("\n%s > bytes=%d\n", iface.Name, n)
 
 		client.Write(buffer[:n])
 		fmt.Printf("net > bytes=%d\n", n)

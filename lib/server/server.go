@@ -115,6 +115,11 @@ func (S Server) processNetPkt(packet []byte, remoteAddr net.Addr, registerClient
 		log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 		return nil
 	}
+
+	if bizarre.IsChatter(pkt) {
+		return nil
+	}
+
 	// Inspect the source address so packet responses (syn-acks, etc) can be sent to the host
 	netFlow := pkt.NetworkLayer().NetworkFlow()
 	tunnelSrc, _ := netFlow.Endpoints()

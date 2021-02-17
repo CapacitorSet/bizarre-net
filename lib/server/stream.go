@@ -54,12 +54,16 @@ func (S Server) tunStreamLoop(iface bizarre.Interface) {
 			log.Printf("tunLoop: " + err.Error())
 			continue
 		}
-		fmt.Printf("\n%s > bytes=%d\n", iface.Name, n)
+
 		pkt, isIPv6 := bizarre.TryParse(buffer[:n])
 		if pkt == nil {
 			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 			continue
 		}
+		if bizarre.IsChatter(pkt) {
+			continue
+		}
+		fmt.Printf("\n%s > bytes=%d\n", iface.Name, n)
 		bizarre.PrintPacket(pkt, isIPv6)
 		if isIPv6 {
 			log.Println("Skipping IPv6 pkt")
