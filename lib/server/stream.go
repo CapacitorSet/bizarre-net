@@ -8,7 +8,7 @@ import (
 )
 
 // Accepts connections for stream transports
-func streamLoop(listener net.Listener, serverDoneChan chan error) {
+func (S Server) streamLoop(listener net.Listener, serverDoneChan chan error) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -16,12 +16,12 @@ func streamLoop(listener net.Listener, serverDoneChan chan error) {
 			serverDoneChan <- err
 			break
 		}
-		go streamConnLoop(conn, serverDoneChan)
+		go S.streamConnLoop(conn, serverDoneChan)
 	}
 }
 
 // Handles packets from a datagram transport or from a TCP-like connection
-func streamConnLoop(conn net.Conn, serverDoneChan chan error) {
+func (S Server) streamConnLoop(conn net.Conn, serverDoneChan chan error) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
@@ -35,8 +35,8 @@ func streamConnLoop(conn net.Conn, serverDoneChan chan error) {
 			break
 		}
 
-		err = processNetPkt(buffer[:n], conn.RemoteAddr(), func(tunnelSrc string) {
-			clientConn[tunnelSrc] = conn
+		err = S.processNetPkt(buffer[:n], conn.RemoteAddr(), func(tunnelSrc string) {
+			S.clientConn[tunnelSrc] = conn
 		})
 		if err != nil {
 			log.Println(err)
@@ -46,7 +46,7 @@ func streamConnLoop(conn net.Conn, serverDoneChan chan error) {
 	}
 }
 
-func tunStreamLoop(iface bizarre.Interface) {
+func (S Server) tunStreamLoop(iface bizarre.Interface) {
 	buffer := make([]byte, 4096)
 	for {
 		n, err := iface.Read(buffer)
@@ -67,7 +67,7 @@ func tunStreamLoop(iface bizarre.Interface) {
 		}
 		netFlow := pkt.NetworkLayer().NetworkFlow()
 		_, tunnelDst := netFlow.Endpoints()
-		conn := clientConn[tunnelDst.String()]
+		conn := S.clientConn[tunnelDst.String()]
 		if conn == nil {
 			fmt.Print("No client conn found, skipping\n")
 			continue

@@ -6,7 +6,11 @@ import (
 )
 
 func main() {
-	err := server.Run("config.toml", nil)
+	srv, err := server.NewServer("config.toml", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = srv.Run()
 	if err != nil {
 		log.Fatal(err)
 	}

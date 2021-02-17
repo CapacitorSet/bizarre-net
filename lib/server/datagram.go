@@ -8,7 +8,7 @@ import (
 )
 
 // Handles packets from a datagram transport or from a TCP-like connection
-func datagramLoop(conn net.PacketConn, serverDoneChan chan error) {
+func (S Server) datagramLoop(conn net.PacketConn, serverDoneChan chan error) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
@@ -22,11 +22,15 @@ func datagramLoop(conn net.PacketConn, serverDoneChan chan error) {
 			break
 		}
 
-		processNetPkt(buffer[:n], transportSrc, func(tunnelSrc string) {
-			clientAddr[tunnelSrc] = transportSrc
+		err = S.processNetPkt(buffer[:n], transportSrc, func(tunnelSrc string) {
+			S.clientAddr[tunnelSrc] = transportSrc
 		})
+		if err != nil {
+			serverDoneChan <- err
+			break
+		}
 
-		_, err = iface.Write(buffer[:n])
+		_, err = S.iface.Write(buffer[:n])
 		if err != nil {
 			log.Print("sendto: ", err)
 			serverDoneChan <- err
@@ -35,7 +39,7 @@ func datagramLoop(conn net.PacketConn, serverDoneChan chan error) {
 	}
 }
 
-func tunDatagramLoop(server net.PacketConn, iface bizarre.Interface) {
+func (S Server) tunDatagramLoop(server net.PacketConn, iface bizarre.Interface) {
 	buffer := make([]byte, 4096)
 	for {
 		n, err := iface.Read(buffer)
@@ -56,7 +60,7 @@ func tunDatagramLoop(server net.PacketConn, iface bizarre.Interface) {
 		}
 		netFlow := pkt.NetworkLayer().NetworkFlow()
 		_, tunnelDst := netFlow.Endpoints()
-		addr := clientAddr[tunnelDst.String()]
+		addr := S.clientAddr[tunnelDst.String()]
 		if addr == nil {
 			fmt.Print("No client addr found, skipping\n")
 			continue
