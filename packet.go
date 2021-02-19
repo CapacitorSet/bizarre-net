@@ -72,20 +72,15 @@ func FlowString(pkt gopacket.Packet) string {
 }
 
 func IsChatter(packet gopacket.Packet) bool {
-	// Todo: match broadcast addresses instead
-	// LLMNR
-	if udpLayer := packet.Layer(layers.LayerTypeUDP); udpLayer != nil {
-		if udpLayer.(*layers.UDP).SrcPort == 5355 {
-			return true
-		}
-	} else if packet.Layer(layers.LayerTypeIGMP) != nil {
-		return true
-	} else if packet.Layer(layers.LayerTypeICMPv6NeighborSolicitation) != nil {
-		return true
-	} else if packet.Layer(layers.LayerTypeICMPv6RouterSolicitation) != nil {
-		return true
-	} else if packet.Layer(layers.LayerTypeMLDv2MulticastListenerReport) != nil {
-		return true
+	switch layer := packet.NetworkLayer().(type) {
+	case *layers.IPv4:
+		// Note: directed broadcast (i.e. all ones in the host part) is not covered for now
+		isBroadcast := layer.DstIP.Equal(net.IPv4bcast)
+		isMulticast := layer.DstIP[0]&0xf0 == 0xe0
+		return isBroadcast || isMulticast
+	case *layers.IPv6:
+		return layer.DstIP[0] == 0xff
+	default:
+		return false
 	}
-	return false
 }
