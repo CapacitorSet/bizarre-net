@@ -11,7 +11,31 @@ import (
 	"time"
 )
 
-type Transport struct{}
+type transport struct {
+	serverConfig
+	clientConfig
+}
+
+func NewServerTransport(config bizarre.Config, md toml.MetaData) (transport, error) {
+	var srvConfig serverConfig
+	err := md.PrimitiveDecode(config.Cat, &srvConfig)
+	if err != nil {
+		return transport{}, err
+	}
+	if srvConfig.ServerName == "" {
+		return transport{}, errors.New("empty server name")
+	}
+	return transport{serverConfig: srvConfig}, nil
+}
+
+func NewClientTransport(config bizarre.Config, md toml.MetaData) (transport, error) {
+	var cltConfig clientConfig
+	err := md.PrimitiveDecode(config.UDP, &cltConfig)
+	if err != nil {
+		return transport{}, err
+	}
+	return transport{clientConfig: cltConfig}, nil
+}
 
 type Addr string
 
@@ -82,30 +106,17 @@ func (c Connection) SetWriteDeadline(t time.Time) error {
 	panic("not implemented")
 }
 
-func (T Transport) Listen(config bizarre.Config, md toml.MetaData) (net.PacketConn, error) {
-	var srvConfig serverConfig
-	err := md.PrimitiveDecode(config.Cat, &srvConfig)
-	if err != nil {
-		return nil, err
-	}
-	if srvConfig.ServerName == "" {
-		return nil, errors.New("empty server name")
-	}
+func (T transport) Listen() (net.PacketConn, error) {
 	return Connection{
 		stdinReader: bufio.NewReader(os.Stdin),
-		localAddr:   Addr(srvConfig.ServerName),
+		localAddr:   Addr(T.serverConfig.ServerName),
 	}, nil
 }
 
-func (T Transport) Dial(config bizarre.Config, md toml.MetaData) (net.Conn, error) {
-	var cltConfig clientConfig
-	err := md.PrimitiveDecode(config.UDP, &cltConfig)
-	if err != nil {
-		return nil, err
-	}
+func (T transport) Dial() (net.Conn, error) {
 	return Connection{
 		stdinReader: bufio.NewReader(os.Stdin),
-		localAddr:   Addr(cltConfig.ClientName),
-		remoteAddr:  Addr(cltConfig.ServerName),
+		localAddr:   Addr(T.clientConfig.ClientName),
+		remoteAddr:  Addr(T.clientConfig.ServerName),
 	}, nil
 }

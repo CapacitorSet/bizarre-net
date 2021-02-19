@@ -6,30 +6,27 @@ import (
 	"net"
 )
 
-type Transport struct{}
+type transport struct {
+	*net.UDPAddr
+}
 
-func (T Transport) Listen(config bizarre.Config, md toml.MetaData) (net.PacketConn, error) {
+func NewTransport(config bizarre.Config, md toml.MetaData) (transport, error) {
 	var udpSrvConfig udpConfig
 	err := md.PrimitiveDecode(config.UDP, &udpSrvConfig)
 	if err != nil {
-		return nil, err
+		return transport{}, err
 	}
-	serverAddr, err := net.ResolveUDPAddr("udp", udpSrvConfig.IP)
+	addr, err := net.ResolveUDPAddr("udp", udpSrvConfig.IP)
 	if err != nil {
-		return nil, err
+		return transport{}, err
 	}
-	return net.ListenUDP("udp", serverAddr)
+	return transport{addr}, nil
 }
 
-func (T Transport) Dial(config bizarre.Config, md toml.MetaData) (net.Conn, error) {
-	var udpClientConfig udpConfig
-	err := md.PrimitiveDecode(config.UDP, &udpClientConfig)
-	if err != nil {
-		return nil, err
-	}
-	serverAddr, err := net.ResolveUDPAddr("udp", udpClientConfig.IP)
-	if err != nil {
-		return nil, err
-	}
-	return net.DialUDP("udp", nil, serverAddr)
+func (T transport) Listen() (net.PacketConn, error) {
+	return net.ListenUDP("udp", T.UDPAddr)
+}
+
+func (T transport) Dial() (net.Conn, error) {
+	return net.DialUDP("udp", nil, T.UDPAddr)
 }

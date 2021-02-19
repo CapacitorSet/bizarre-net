@@ -17,7 +17,7 @@ type StreamServer struct {
 
 func (S StreamServer) Run() error {
 	serverDoneChan := make(chan error)
-	server, err := S.Transport.Listen(S.config, S.md)
+	server, err := S.Transport.Listen()
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (S StreamServer) tunStreamLoop() {
 			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 			continue
 		}
-		if S.config.DropChatter && bizarre.IsChatter(pkt) {
+		if S.Config.DropChatter && bizarre.IsChatter(pkt) {
 			continue
 		}
 		fmt.Printf("\ntun=>net: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)

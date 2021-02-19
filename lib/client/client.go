@@ -14,14 +14,14 @@ import (
 	"sync"
 )
 
-func getTransport(config bizarre.Config) (bizarre.Transport, error) {
+func getTransport(config bizarre.Config, md toml.MetaData) (bizarre.Transport, error) {
 	switch strings.ToLower(config.Transport) {
 	case "udp":
-		return udp.Transport{}, nil
+		return udp.NewTransport(config, md)
 	case "cat":
-		return cat.Transport{}, nil
+		return cat.NewClientTransport(config, md)
 	case "socket":
-		return socket.Transport{}, nil
+		return socket.NewTransport(config, md)
 	default:
 		return nil, errors.New("no such transport: " + config.Transport)
 	}
@@ -48,7 +48,7 @@ func NewClient(configPath string, ioctlLock *sync.Mutex) (Client, error) {
 	}
 	log.Printf("%s up.\n", iface.Name)
 
-	transport, err := getTransport(config)
+	transport, err := getTransport(config, md)
 	if err != nil {
 		return Client{}, err
 	}
@@ -70,7 +70,7 @@ func (C Client) Run() error {
 	}
 
 	// Todo: check that IP transports (udp etc) are not routed through the interface
-	client, err := C.Transport.Dial(C.Config, C.md)
+	client, err := C.Transport.Dial()
 	if err != nil {
 		return err
 	}

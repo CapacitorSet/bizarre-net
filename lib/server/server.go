@@ -14,26 +14,22 @@ import (
 	"sync"
 )
 
-func getTransport(config bizarre.Config) (bizarre.Transport, error) {
+func getTransport(config bizarre.Config, md toml.MetaData) (bizarre.Transport, error) {
 	switch strings.ToLower(config.Transport) {
 	case "udp":
-		return udp.Transport{}, nil
+		return udp.NewTransport(config, md)
 	case "cat":
-		return cat.Transport{}, nil
+		return cat.NewServerTransport(config, md)
 	case "socket":
-		return socket.Transport{}, nil
+		return socket.NewTransport(config, md)
 	default:
 		return nil, errors.New("no such transport: " + config.Transport)
 	}
 }
 
 type BaseServer struct {
-	// The TUN interface
 	bizarre.Interface
-
-	// TOML config data
-	config bizarre.Config
-	md     toml.MetaData
+	bizarre.Config
 }
 type Server interface {
 	Run() error
@@ -52,15 +48,14 @@ func NewServer(configFile string, ioctlLock *sync.Mutex) (Server, error) {
 	}
 	log.Printf("%s up with IP %s.\n", iface.Name, iface.IPNet.String())
 
-	genericTransport, err := getTransport(config)
+	genericTransport, err := getTransport(config, md)
 	if err != nil {
 		return nil, err
 	}
 
 	base := BaseServer{
 		Interface: iface,
-		config:    config,
-		md:        md,
+		Config:    config,
 	}
 	switch transport := genericTransport.(type) {
 	case bizarre.StreamTransport:

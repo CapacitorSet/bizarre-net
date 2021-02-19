@@ -6,34 +6,31 @@ import (
 	"net"
 )
 
-type Transport struct{}
+type transport struct {
+	*net.UnixAddr
+}
 
-func (T Transport) Listen(config bizarre.Config, md toml.MetaData) (net.Listener, error) {
+func NewTransport(config bizarre.Config, md toml.MetaData) (transport, error) {
 	var srvConfig socketConfig
 	err := md.PrimitiveDecode(config.Socket, &srvConfig)
 	if err != nil {
-		return nil, err
+		return transport{}, err
 	}
 	addr, err := net.ResolveUnixAddr("unix", srvConfig.Socket)
 	if err != nil {
-		return nil, err
+		return transport{}, err
 	}
-	conn, err := net.ListenUnix("unix", addr)
+	return transport{addr}, nil
+}
+
+func (T transport) Listen() (net.Listener, error) {
+	conn, err := net.ListenUnix("unix", T.UnixAddr)
 	if err != nil {
 		return nil, err
 	}
 	return conn, nil
 }
 
-func (T Transport) Dial(config bizarre.Config, md toml.MetaData) (net.Conn, error) {
-	var cltConfig socketConfig
-	err := md.PrimitiveDecode(config.Socket, &cltConfig)
-	if err != nil {
-		return nil, err
-	}
-	addr, err := net.ResolveUnixAddr("unix", cltConfig.Socket)
-	if err != nil {
-		return nil, err
-	}
-	return net.DialUnix("unix", nil, addr)
+func (T transport) Dial() (net.Conn, error) {
+	return net.DialUnix("unix", nil, T.UnixAddr)
 }

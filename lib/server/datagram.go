@@ -17,7 +17,7 @@ type DatagramServer struct {
 
 func (D DatagramServer) Run() error {
 	serverDoneChan := make(chan error)
-	server, err := D.Transport.Listen(D.config, D.md)
+	server, err := D.Transport.Listen()
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func (D DatagramServer) tunLoop(server net.PacketConn) {
 			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 			continue
 		}
-		if D.config.DropChatter && bizarre.IsChatter(pkt) {
+		if D.Config.DropChatter && bizarre.IsChatter(pkt) {
 			continue
 		}
 		fmt.Printf("\ntun=>net: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)
