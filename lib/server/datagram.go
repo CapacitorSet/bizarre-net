@@ -53,13 +53,6 @@ func (D DatagramServer) datagramLoop(conn net.PacketConn, serverDoneChan chan er
 			serverDoneChan <- err
 			break
 		}
-
-		_, err = D.Interface.Write(buffer[:n])
-		if err != nil {
-			log.Print("sendto: ", err)
-			serverDoneChan <- err
-			break
-		}
 	}
 }
 
