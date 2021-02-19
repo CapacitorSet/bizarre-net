@@ -11,11 +11,12 @@ import (
 	"time"
 )
 
-type Transport struct {}
+type Transport struct{}
 
 type Addr string
+
 func (a Addr) Network() string { return "cat" }
-func (a Addr) String() string { return string(a) }
+func (a Addr) String() string  { return string(a) }
 
 type Connection struct {
 	localAddr, remoteAddr Addr
@@ -92,7 +93,7 @@ func (T Transport) Listen(config bizarre.Config, md toml.MetaData) (net.PacketCo
 	}
 	return Connection{
 		stdinReader: bufio.NewReader(os.Stdin),
-		localAddr: Addr(srvConfig.ServerName),
+		localAddr:   Addr(srvConfig.ServerName),
 	}, nil
 }
 
@@ -104,7 +105,7 @@ func (T Transport) Dial(config bizarre.Config, md toml.MetaData) (net.Conn, erro
 	}
 	return Connection{
 		stdinReader: bufio.NewReader(os.Stdin),
-		localAddr: Addr(cltConfig.ClientName),
-		remoteAddr: Addr(cltConfig.ServerName),
+		localAddr:   Addr(cltConfig.ClientName),
+		remoteAddr:  Addr(cltConfig.ServerName),
 	}, nil
 }

@@ -6,7 +6,7 @@ import (
 	"net"
 )
 
-type Transport struct {}
+type Transport struct{}
 
 func (T Transport) Listen(config bizarre.Config, md toml.MetaData) (net.PacketConn, error) {
 	var udpSrvConfig udpConfig
@@ -33,4 +33,3 @@ func (T Transport) Dial(config bizarre.Config, md toml.MetaData) (net.Conn, erro
 	}
 	return net.DialUDP("udp", nil, serverAddr)
 }
-
