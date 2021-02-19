@@ -6,7 +6,11 @@ import (
 )
 
 func main() {
-	err := client.Run("config.toml", nil)
+	client, err := client.NewClient("config.toml", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = client.Run()
 	if err != nil {
 		log.Fatal(err)
 	}
