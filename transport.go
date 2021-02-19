@@ -6,6 +6,7 @@ import (
 
 type Transport interface {
 	Dial() (net.Conn, error)
+	HasIPRoutingConflict(Interface) (bool, error)
 }
 
 // UDP-like transports: connectionless, stateless

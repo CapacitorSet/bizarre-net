@@ -1,7 +1,7 @@
 package bizarre_net
 
 import (
-	"github.com/google/gopacket/routing"
+	"github.com/docker/libcontainer/netlink"
 	"github.com/milosgajdos/tenus"
 	"github.com/songgao/water"
 	"net"
@@ -108,13 +108,23 @@ func SetDefaultGateway(i Interface) error {
 // Is the given IP routed through this interface?
 // Used to detect when the transport endpoint would be incorrectly tunneled in IP transports like UDP
 func (I Interface) IsRoutedThrough(ip net.IP) (bool, error) {
-	router, err := routing.New()
+	routes, err := netlink.NetworkGetRoutes()
 	if err != nil {
 		return false, err
 	}
-	routeIface, _, _, err := router.Route(ip)
-	if err != nil {
-		return false, err
+	var bestRoute netlink.Route
+	bestOnes := 0
+	// Poor man's longest-prefix-matching
+	for _, route := range routes {
+		if route.Default && bestOnes == 0 {
+			bestRoute = route
+		} else if route.Contains(ip) {
+			ones, _ := route.Mask.Size()
+			if ones > bestOnes {
+				bestRoute = route
+				bestOnes = ones
+			}
+		}
 	}
-	return routeIface.Name == I.Name, nil
+	return bestRoute.Iface.Name == I.Name, nil
 }

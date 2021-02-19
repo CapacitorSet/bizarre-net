@@ -34,3 +34,7 @@ func (T transport) Listen() (net.Listener, error) {
 func (T transport) Dial() (net.Conn, error) {
 	return net.DialUnix("unix", nil, T.UnixAddr)
 }
+
+func (T transport) HasIPRoutingConflict(bizarre.Interface) (bool, error) {
+	return false, nil
+}

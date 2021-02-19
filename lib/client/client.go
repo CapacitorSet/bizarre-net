@@ -67,6 +67,18 @@ func (C Client) Run() error {
 		if err != nil {
 			return err
 		}
+		hasConflict, err := C.Transport.HasIPRoutingConflict(C.Interface)
+		if err != nil {
+			panic(err)
+			return err
+		}
+		if hasConflict {
+			if C.Config.SkipRoutingCheck {
+				log.Println("The IP endpoint is routed through the tunnel. Ignoring due to SkipRoutingCheck=true.")
+			} else {
+				log.Fatalln("The IP/host you are trying to use as an endpoint seems to be routed through the tunnel itself; this likely won't work. Review the routing table, or add SkipRoutingCheck=true in the config if you know what you're doing.")
+			}
+		}
 	}
 
 	// Todo: check that IP transports (udp etc) are not routed through the interface

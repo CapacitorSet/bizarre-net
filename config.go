@@ -6,12 +6,13 @@ import (
 )
 
 type Config struct {
-	TUN         TUNConfig `toml:"tun"`
-	DropChatter bool
-	Transport   string
-	UDP         toml.Primitive
-	Cat         toml.Primitive
-	Socket      toml.Primitive
+	Transport        string
+	DropChatter      bool
+	SkipRoutingCheck bool
+	TUN              TUNConfig `toml:"tun"`
+	UDP              toml.Primitive
+	Cat              toml.Primitive
+	Socket           toml.Primitive
 }
 
 func ReadConfig(file string) (Config, toml.MetaData, error) {
@@ -21,7 +22,8 @@ func ReadConfig(file string) (Config, toml.MetaData, error) {
 			Prefix:       "bizarre",
 			SetDefaultGW: true,
 		},
-		DropChatter: true,
+		DropChatter:      true,
+		SkipRoutingCheck: false,
 	}
 	md, err := toml.DecodeFile(file, &config)
 	if err != nil {

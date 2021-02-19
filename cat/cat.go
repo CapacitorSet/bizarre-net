@@ -120,3 +120,7 @@ func (T transport) Dial() (net.Conn, error) {
 		remoteAddr:  Addr(T.clientConfig.ServerName),
 	}, nil
 }
+
+func (T transport) HasIPRoutingConflict(bizarre.Interface) (bool, error) {
+	return false, nil
+}

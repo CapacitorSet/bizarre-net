@@ -10,6 +10,10 @@ type transport struct {
 	*net.UDPAddr
 }
 
+func (T transport) HasIPRoutingConflict(iface bizarre.Interface) (bool, error) {
+	return iface.IsRoutedThrough(T.IP)
+}
+
 func NewTransport(config bizarre.Config, md toml.MetaData) (transport, error) {
 	var udpSrvConfig udpConfig
 	err := md.PrimitiveDecode(config.UDP, &udpSrvConfig)
