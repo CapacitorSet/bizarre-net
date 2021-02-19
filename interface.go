@@ -1,6 +1,7 @@
 package bizarre_net
 
 import (
+	"github.com/google/gopacket/routing"
 	"github.com/milosgajdos/tenus"
 	"github.com/songgao/water"
 	"net"
@@ -12,8 +13,9 @@ import (
 // Functions for setting up the network interface
 
 type TUNConfig struct {
-	Prefix string // The prefix of the network interface, eg. "bizarre" will create bizarre0, bizarre1...
-	IP     string // The address and netmask in CIDR notation, eg. "10.0.0.1/24"
+	Prefix       string // The prefix of the network interface, eg. "bizarre" will create bizarre0, bizarre1...
+	IP           string // The address and netmask in CIDR notation, eg. "10.0.0.1/24"
+	SetDefaultGW bool   // Use this interface as default route?
 }
 
 type Interface struct {
@@ -78,6 +80,7 @@ func CreateInterface(config TUNConfig, ioctlLock *sync.Mutex) (Interface, error)
 		return Interface{}, err
 	}
 	iface.IPNet = subnet
+	iface.IPNet.IP = ip
 	err = link.SetLinkIp(ip, subnet)
 	if err != nil {
 		return Interface{}, err
@@ -88,4 +91,30 @@ func CreateInterface(config TUNConfig, ioctlLock *sync.Mutex) (Interface, error)
 	}
 
 	return iface, nil
+}
+
+func SetDefaultGateway(i Interface) error {
+	link, err := tenus.NewLinkFrom(i.Name)
+	if err != nil {
+		return err
+	}
+	err = link.SetLinkDefaultGw(&i.IP)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Is the given IP routed through this interface?
+// Used to detect when the transport endpoint would be incorrectly tunneled in IP transports like UDP
+func (I Interface) IsRoutedThrough(ip net.IP) (bool, error) {
+	router, err := routing.New()
+	if err != nil {
+		return false, err
+	}
+	routeIface, _, _, err := router.Route(ip)
+	if err != nil {
+		return false, err
+	}
+	return routeIface.Name == I.Name, nil
 }

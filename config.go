@@ -18,7 +18,8 @@ func ReadConfig(file string) (Config, toml.MetaData, error) {
 	// Defaults
 	config := Config{
 		TUN: TUNConfig{
-			Prefix: "bizarre",
+			Prefix:       "bizarre",
+			SetDefaultGW: true,
 		},
 		DropChatter: true,
 	}

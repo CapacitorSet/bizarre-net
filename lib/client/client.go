@@ -61,6 +61,15 @@ func NewClient(configPath string, ioctlLock *sync.Mutex) (Client, error) {
 }
 
 func (C Client) Run() error {
+	if C.Config.TUN.SetDefaultGW {
+		log.Println("Routing all traffic through " + C.Interface.Name)
+		err := bizarre.SetDefaultGateway(C.Interface)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Todo: check that IP transports (udp etc) are not routed through the interface
 	client, err := C.Transport.Dial(C.Config, C.md)
 	if err != nil {
 		return err
