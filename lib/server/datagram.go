@@ -22,8 +22,8 @@ func (D DatagramServer) Run() error {
 		return err
 	}
 	defer server.Close()
-	go D.datagramLoop(server, serverDoneChan)
-	go D.tunDatagramLoop(server)
+	go D.serverLoop(server, serverDoneChan)
+	go D.tunLoop(server)
 
 	select {
 	case err := <-serverDoneChan:
@@ -32,7 +32,7 @@ func (D DatagramServer) Run() error {
 }
 
 // Handles packets from a datagram transport or from a TCP-like connection
-func (D DatagramServer) datagramLoop(conn net.PacketConn, serverDoneChan chan error) {
+func (D DatagramServer) serverLoop(conn net.PacketConn, serverDoneChan chan error) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
@@ -56,7 +56,7 @@ func (D DatagramServer) datagramLoop(conn net.PacketConn, serverDoneChan chan er
 	}
 }
 
-func (D DatagramServer) tunDatagramLoop(server net.PacketConn) {
+func (D DatagramServer) tunLoop(server net.PacketConn) {
 	buffer := make([]byte, 4096)
 	for {
 		n, err := D.Interface.Read(buffer)
