@@ -46,7 +46,7 @@ func (D DatagramServer) datagramLoop(conn net.PacketConn, serverDoneChan chan er
 			break
 		}
 
-		err = D.processNetPkt(buffer[:n], transportSrc, func(tunnelSrc string) {
+		err = D.processNetPkt(buffer[:n], func(tunnelSrc string) {
 			D.clientAddr[tunnelSrc] = transportSrc
 		})
 		if err != nil {
@@ -72,7 +72,7 @@ func (D DatagramServer) tunDatagramLoop(server net.PacketConn) {
 			continue
 		}
 
-		pkt, isIPv6 := bizarre.TryParse(buffer[:n])
+		pkt := bizarre.TryParse(buffer[:n])
 		if pkt == nil {
 			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 			continue
@@ -80,12 +80,8 @@ func (D DatagramServer) tunDatagramLoop(server net.PacketConn) {
 		if bizarre.IsChatter(pkt) {
 			continue
 		}
-		fmt.Printf("\n%s > bytes=%d\n", D.Interface.Name, n)
-		bizarre.PrintPacket(pkt, isIPv6)
-		if isIPv6 {
-			log.Println("Skipping IPv6 pkt")
-			continue
-		}
+		fmt.Printf("\ntun=>net: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)
+
 		netFlow := pkt.NetworkLayer().NetworkFlow()
 		_, tunnelDst := netFlow.Endpoints()
 		addr := D.clientAddr[tunnelDst.String()]
@@ -100,6 +96,6 @@ func (D DatagramServer) tunDatagramLoop(server net.PacketConn) {
 			continue
 		}
 
-		fmt.Printf("> net bytes=%d\n", n)
+		fmt.Printf("tun=>net: bytes=%d\n", n)
 	}
 }

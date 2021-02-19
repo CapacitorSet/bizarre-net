@@ -80,8 +80,8 @@ func NewServer(configFile string, ioctlLock *sync.Mutex) (Server, error) {
 	}
 }
 
-func (S BaseServer) processNetPkt(packet []byte, remoteAddr net.Addr, registerClient func(string)) error {
-	pkt, isIPv6 := bizarre.TryParse(packet)
+func (S BaseServer) processNetPkt(packet []byte, registerClient func(string)) error {
+	pkt := bizarre.TryParse(packet)
 	if pkt == nil {
 		log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 		return nil
@@ -96,14 +96,13 @@ func (S BaseServer) processNetPkt(packet []byte, remoteAddr net.Addr, registerCl
 	tunnelSrc, _ := netFlow.Endpoints()
 	registerClient(tunnelSrc.String())
 
-	fmt.Printf("\nnet > bytes=%d from=%s\n", len(packet), remoteAddr.String())
-	bizarre.PrintPacket(pkt, isIPv6)
+	fmt.Printf("\nnet=>tun: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), len(packet))
 
 	_, err := S.Interface.Write(packet)
 	if err != nil {
 		log.Print("sendto: ", err)
 		return err
 	}
-	fmt.Printf("> %s bytes=%d to=%s\n", S.Interface.Name, len(packet), remoteAddr.String())
+	fmt.Printf("net=>tun: bytes=%d\n", len(packet))
 	return nil
 }

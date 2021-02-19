@@ -3,7 +3,7 @@ package client
 import (
 	"errors"
 	"fmt"
-	"github.com/CapacitorSet/bizarre-net"
+	bizarre "github.com/CapacitorSet/bizarre-net"
 	"github.com/CapacitorSet/bizarre-net/cat"
 	"github.com/CapacitorSet/bizarre-net/socket"
 	"github.com/CapacitorSet/bizarre-net/udp"
@@ -13,7 +13,7 @@ import (
 	"sync"
 )
 
-func getTransport(config bizarre_net.Config) (bizarre_net.Transport, error) {
+func getTransport(config bizarre.Config) (bizarre.Transport, error) {
 	switch strings.ToLower(config.Transport) {
 	case "udp":
 		return udp.Transport{}, nil
@@ -30,11 +30,11 @@ func getTransport(config bizarre_net.Config) (bizarre_net.Transport, error) {
 // ioctlLock is an optional mutex to lock ioctl (i.e. TUN creation) calls. It avoids crashes when launching eg. both
 //   a client and a server at the same time in tests
 func Run(configPath string, ioctlLock *sync.Mutex) error {
-	config, md, err := bizarre_net.ReadConfig(configPath)
+	config, md, err := bizarre.ReadConfig(configPath)
 	if err != nil {
 		return err
 	}
-	iface, err := bizarre_net.CreateInterface(config.TUN, ioctlLock)
+	iface, err := bizarre.CreateInterface(config.TUN, ioctlLock)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func Run(configPath string, ioctlLock *sync.Mutex) error {
 	}
 }
 
-func transportLoop(client net.Conn, iface bizarre_net.Interface, serverDoneChan chan error) {
+func transportLoop(client net.Conn, iface bizarre.Interface, serverDoneChan chan error) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
@@ -77,20 +77,15 @@ func transportLoop(client net.Conn, iface bizarre_net.Interface, serverDoneChan 
 			break
 		}
 
-		pkt, isIPv6 := bizarre_net.TryParse(buffer[:n])
+		pkt := bizarre.TryParse(buffer[:n])
 		if pkt == nil {
 			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 			continue
 		}
-		if bizarre_net.IsChatter(pkt) {
+		if bizarre.IsChatter(pkt) {
 			continue
 		}
-		if isIPv6 {
-			fmt.Println("Skipping IPv6 pkt")
-			continue
-		}
-		fmt.Printf("\nnet > bytes=%d\n", n)
-		bizarre_net.PrintPacket(pkt, isIPv6)
+		fmt.Printf("\nnet=>tun: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)
 
 		// todo: handle iface write fails gracefully if not an IP packet (buffer[0] & 0xF0 != 0x4, 0x6)
 		_, err = iface.Write(buffer[:n])
@@ -100,11 +95,11 @@ func transportLoop(client net.Conn, iface bizarre_net.Interface, serverDoneChan 
 			break
 		}
 
-		fmt.Printf("> %s bytes=%d\n", iface.Name, n)
+		fmt.Printf("net=>tun: bytes=%d\n", n)
 	}
 }
 
-func tunLoop(client net.Conn, iface bizarre_net.Interface, serverDoneChan chan error) {
+func tunLoop(client net.Conn, iface bizarre.Interface, serverDoneChan chan error) {
 	buffer := make([]byte, 4096)
 	for {
 		n, err := iface.Read(buffer)
@@ -114,21 +109,17 @@ func tunLoop(client net.Conn, iface bizarre_net.Interface, serverDoneChan chan e
 			break
 		}
 
-		pkt, isIPv6 := bizarre_net.TryParse(buffer[:n])
+		pkt := bizarre.TryParse(buffer[:n])
 		if pkt == nil {
 			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 			continue
 		}
-		if bizarre_net.IsChatter(pkt) {
+		if bizarre.IsChatter(pkt) {
 			continue
 		}
-		if isIPv6 {
-			fmt.Println("Skipping IPv6 pkt")
-			continue
-		}
-		fmt.Printf("\n%s > bytes=%d\n", iface.Name, n)
+		fmt.Printf("\ntun=>net: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)
 
 		client.Write(buffer[:n])
-		fmt.Printf("net > bytes=%d\n", n)
+		fmt.Printf("tun=>net: bytes=%d\n", n)
 	}
 }

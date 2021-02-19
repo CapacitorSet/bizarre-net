@@ -59,7 +59,7 @@ func (S StreamServer) streamConnLoop(conn net.Conn, serverDoneChan chan error) {
 			break
 		}
 
-		err = S.processNetPkt(buffer[:n], conn.RemoteAddr(), func(tunnelSrc string) {
+		err = S.processNetPkt(buffer[:n], func(tunnelSrc string) {
 			S.clientConn[tunnelSrc] = conn
 		})
 		if err != nil {
@@ -79,7 +79,7 @@ func (S StreamServer) tunStreamLoop() {
 			continue
 		}
 
-		pkt, isIPv6 := bizarre.TryParse(buffer[:n])
+		pkt := bizarre.TryParse(buffer[:n])
 		if pkt == nil {
 			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 			continue
@@ -87,12 +87,8 @@ func (S StreamServer) tunStreamLoop() {
 		if bizarre.IsChatter(pkt) {
 			continue
 		}
-		fmt.Printf("\n%s > bytes=%d\n", S.Interface.Name, n)
-		bizarre.PrintPacket(pkt, isIPv6)
-		if isIPv6 {
-			log.Println("Skipping IPv6 pkt")
-			continue
-		}
+		fmt.Printf("\ntun=>net: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)
+
 		netFlow := pkt.NetworkLayer().NetworkFlow()
 		_, tunnelDst := netFlow.Endpoints()
 		conn := S.clientConn[tunnelDst.String()]
