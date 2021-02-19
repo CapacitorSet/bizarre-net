@@ -27,21 +27,16 @@ func getTransport(config bizarre.Config) (bizarre.Transport, error) {
 	}
 }
 
-type Server struct {
-	// Maps the in-tunnel source IP of the host to its transport address (used in WriteTo for datagram transports)
-	clientAddr map[string]net.Addr
-
-	// Maps the in-tunnel source IP of the host to its connection (used in Write for stream transports)
-	clientConn map[string]net.Conn
-
+type BaseServer struct {
 	// The TUN interface
-	iface bizarre.Interface
+	bizarre.Interface
 
 	// TOML config data
 	config bizarre.Config
-	md toml.MetaData
-
-	transport bizarre.Transport
+	md     toml.MetaData
+}
+type Server interface {
+	Run() error
 }
 
 // ioctlLock is an optional mutex to lock ioctl (i.e. TUN creation) calls. It avoids crashes when launching eg. both
@@ -49,67 +44,43 @@ type Server struct {
 func NewServer(configFile string, ioctlLock *sync.Mutex) (Server, error) {
 	config, md, err := bizarre.ReadConfig(configFile)
 	if err != nil {
-		return Server{}, err
+		return nil, err
 	}
 	iface, err := bizarre.CreateInterface(config.TUN, ioctlLock)
 	if err != nil {
-		return Server{}, err
+		return nil, err
 	}
 	log.Printf("%s up with IP %s.\n", iface.Name, iface.IPNet.String())
 
-	transport, err := getTransport(config)
+	genericTransport, err := getTransport(config)
 	if err != nil {
-		return Server{}, err
+		return nil, err
 	}
 
-	s := Server{
-		iface: iface,
-		config: config,
-		md: md,
-		transport: transport,
+	base := BaseServer{
+		Interface: iface,
+		config:    config,
+		md:        md,
 	}
-	switch transport.(type) {
+	switch transport := genericTransport.(type) {
 	case bizarre.StreamTransport:
-		s.clientConn = make(map[string]net.Conn)
+		return StreamServer{
+			BaseServer: base,
+			Transport:  transport,
+			clientConn: make(map[string]net.Conn),
+		}, nil
 	case bizarre.DatagramTransport:
-		s.clientAddr = make(map[string]net.Addr)
+		return DatagramServer{
+			BaseServer: base,
+			Transport:  transport,
+			clientAddr: make(map[string]net.Addr),
+		}, nil
 	default:
-		return Server{}, errors.New(fmt.Sprintf("transport %T implements neither StreamTransport nor DatagramTransport", transport))
-	}
-
-	return s, nil
-}
-
-
-func (S Server) Run() error {
-	serverDoneChan := make(chan error)
-	switch transport := S.transport.(type) {
-	case bizarre.StreamTransport:
-		server, err := transport.Listen(S.config, S.md)
-		if err != nil {
-			return err
-		}
-		defer server.Close()
-		go S.streamLoop(server, serverDoneChan)
-		go S.tunStreamLoop(S.iface)
-	case bizarre.DatagramTransport:
-		server, err := transport.Listen(S.config, S.md)
-		if err != nil {
-			return err
-		}
-		defer server.Close()
-		go S.datagramLoop(server, serverDoneChan)
-		go S.tunDatagramLoop(server, S.iface)
-	default:
-	}
-
-	select {
-	case err := <-serverDoneChan:
-		return err
+		return nil, errors.New(fmt.Sprintf("transport %T implements neither StreamTransport nor DatagramTransport", transport))
 	}
 }
 
-func (S Server) processNetPkt(packet []byte, remoteAddr net.Addr, registerClient func(string)) error {
+func (S BaseServer) processNetPkt(packet []byte, remoteAddr net.Addr, registerClient func(string)) error {
 	pkt, isIPv6 := bizarre.TryParse(packet)
 	if pkt == nil {
 		log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
@@ -128,11 +99,11 @@ func (S Server) processNetPkt(packet []byte, remoteAddr net.Addr, registerClient
 	fmt.Printf("\nnet > bytes=%d from=%s\n", len(packet), remoteAddr.String())
 	bizarre.PrintPacket(pkt, isIPv6)
 
-	_, err := S.iface.Write(packet)
+	_, err := S.Interface.Write(packet)
 	if err != nil {
 		log.Print("sendto: ", err)
 		return err
 	}
-	fmt.Printf("> %s bytes=%d to=%s\n", S.iface.Name, len(packet), remoteAddr.String())
+	fmt.Printf("> %s bytes=%d to=%s\n", S.Interface.Name, len(packet), remoteAddr.String())
 	return nil
 }

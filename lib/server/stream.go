@@ -7,8 +7,32 @@ import (
 	"net"
 )
 
+type StreamServer struct {
+	BaseServer
+	Transport bizarre.StreamTransport
+
+	// Maps the in-tunnel source IP of the host to its connection (used in Write for stream transports)
+	clientConn map[string]net.Conn
+}
+
+func (S StreamServer) Run() error {
+	serverDoneChan := make(chan error)
+	server, err := S.Transport.Listen(S.config, S.md)
+	if err != nil {
+		return err
+	}
+	defer server.Close()
+	go S.streamLoop(server, serverDoneChan)
+	go S.tunStreamLoop()
+
+	select {
+	case err := <-serverDoneChan:
+		return err
+	}
+}
+
 // Accepts connections for stream transports
-func (S Server) streamLoop(listener net.Listener, serverDoneChan chan error) {
+func (S StreamServer) streamLoop(listener net.Listener, serverDoneChan chan error) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -21,7 +45,7 @@ func (S Server) streamLoop(listener net.Listener, serverDoneChan chan error) {
 }
 
 // Handles packets from a datagram transport or from a TCP-like connection
-func (S Server) streamConnLoop(conn net.Conn, serverDoneChan chan error) {
+func (S StreamServer) streamConnLoop(conn net.Conn, serverDoneChan chan error) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
@@ -46,10 +70,10 @@ func (S Server) streamConnLoop(conn net.Conn, serverDoneChan chan error) {
 	}
 }
 
-func (S Server) tunStreamLoop(iface bizarre.Interface) {
+func (S StreamServer) tunStreamLoop() {
 	buffer := make([]byte, 4096)
 	for {
-		n, err := iface.Read(buffer)
+		n, err := S.Interface.Read(buffer)
 		if err != nil {
 			log.Printf("tunLoop: " + err.Error())
 			continue
@@ -63,7 +87,7 @@ func (S Server) tunStreamLoop(iface bizarre.Interface) {
 		if bizarre.IsChatter(pkt) {
 			continue
 		}
-		fmt.Printf("\n%s > bytes=%d\n", iface.Name, n)
+		fmt.Printf("\n%s > bytes=%d\n", S.Interface.Name, n)
 		bizarre.PrintPacket(pkt, isIPv6)
 		if isIPv6 {
 			log.Println("Skipping IPv6 pkt")
