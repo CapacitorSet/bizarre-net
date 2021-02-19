@@ -70,7 +70,7 @@ func (D DatagramServer) tunLoop(server net.PacketConn) {
 			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 			continue
 		}
-		if bizarre.IsChatter(pkt) {
+		if D.config.DropChatter && bizarre.IsChatter(pkt) {
 			continue
 		}
 		fmt.Printf("\ntun=>net: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)

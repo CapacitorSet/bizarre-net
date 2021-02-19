@@ -94,7 +94,7 @@ func (C Client) tunLoop(client net.Conn, doneChan chan error) {
 			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 			continue
 		}
-		if bizarre.IsChatter(pkt) {
+		if C.Config.DropChatter && bizarre.IsChatter(pkt) {
 			continue
 		}
 		fmt.Printf("\ntun=>net: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)
