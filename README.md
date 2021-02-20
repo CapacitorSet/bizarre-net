@@ -61,6 +61,25 @@ When troubleshooting you might want to ask yourself these questions:
 
 When developing, using network namespaces allows for multiple "clean" environments (no firewalls or iptables rules). `test/server-setup.sh` followed by `test/client-setup.sh` creates an environment with a "server" namespace `srvns` and a "client" namespace `clins`, connected by a virtual Ethernet cable `seth0-veth0`, respectively with the address 192.168.1.2/24 and 192.168.1.3/24. With `test/server-launch.sh` and `test/client-launch.sh` you can then open a shell into those namespaces. Finally, [here](https://iximiuz.com/en/posts/container-networking-is-simple/)'s a good tutorial about network namespaces.
 
+## Testing
+Set up the testing environment with `test/server-setup.sh` and `test/client-setup.sh`. Then:
+
+```bash
+# First run this in a terminal
+test/server-launch.sh
+cd test/udp
+sudo go test -run TestUDPServer
+```
+
+```bash
+# Then run this in another terminal
+test/client-launch.sh
+cd test/udp
+sudo go test -run TestUDPClient
+```
+
+`sudo go run run_tests.go` is also available, but it is meant for quick tests where you're not interested in inspecting the output and for continuous integration.
+
 ## Licenses
 
 This project is currently "all rights reserved", but will eventually get a proper license when it works.
