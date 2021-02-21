@@ -4,6 +4,7 @@ import (
 	"github.com/BurntSushi/toml"
 	bizarre "github.com/CapacitorSet/bizarre-net"
 	"net"
+	"os"
 )
 
 type transport struct {
@@ -24,6 +25,7 @@ func NewTransport(config bizarre.Config, md toml.MetaData) (transport, error) {
 }
 
 func (T transport) Listen() (net.Listener, error) {
+	_ = os.Remove(T.UnixAddr.Name)
 	conn, err := net.ListenUnix("unix", T.UnixAddr)
 	if err != nil {
 		return nil, err
