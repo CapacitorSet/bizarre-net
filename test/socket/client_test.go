@@ -1,19 +1,19 @@
-package udp
+package socket
 
 import (
 	"github.com/CapacitorSet/bizarre-net/test/generic"
 	"testing"
 )
 
-const clientConfig = `Transport = "udp"
+const clientConfig = `Transport = "socket"
 
 [tun]
 Prefix = "testbizarre"
 IP = "20.20.20.1/24"
 SetDefaultGW = false
 
-[udp]
-IP = "192.168.1.2:1917"`
+[socket]
+Socket = "/tmp/bizarre-test.sock"`
 
 var testConfig = generic.TestConfig{
 	Client: generic.HostConfig{
