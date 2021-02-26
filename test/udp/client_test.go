@@ -6,6 +6,7 @@ import (
 )
 
 const clientConfig = `Transport = "udp"
+SendHello = false
 
 [tun]
 Prefix = "testbizarre"

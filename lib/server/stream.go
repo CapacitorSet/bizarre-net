@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
 	bizarre "github.com/CapacitorSet/bizarre-net"
 	"log"
@@ -57,6 +58,22 @@ func (S StreamServer) connLoop(conn net.Conn, serverDoneChan chan error) {
 			log.Println(err)
 			serverDoneChan <- err
 			break
+		}
+
+		// Neither an IPv4 nor an IPv6 packet
+		if buffer[0]&0xf0 != 0x40 && buffer[0]&0xf0 != 0x60 {
+			fmt.Printf("\nnet=>tun: service message, bytes=%d\n", n)
+			if bytes.Equal(buffer[:n], bizarre.HELLO_MESSAGE) {
+				_, err = conn.Write(bizarre.HELLO_ACK_MESSAGE)
+				if err != nil {
+					log.Println(err)
+					serverDoneChan <- err
+					break
+				}
+			} else {
+				log.Println("Unknown service message!")
+			}
+			continue
 		}
 
 		err = S.processNetPkt(buffer[:n], func(tunnelSrc string) {

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/BurntSushi/toml"
@@ -32,6 +33,8 @@ type Client struct {
 	bizarre.Config
 	md toml.MetaData
 	bizarre.Transport
+
+	doneChan  chan error
 }
 
 // configPath is the path to the TOML config
@@ -57,6 +60,7 @@ func NewClient(configPath string, ioctlLock *sync.Mutex) (Client, error) {
 		Config:    config,
 		md:        md,
 		Transport: transport,
+		doneChan:  make(chan error),
 	}, nil
 }
 
@@ -81,32 +85,34 @@ func (C Client) Run() error {
 		}
 	}
 
-	// Todo: check that IP transports (udp etc) are not routed through the interface
 	client, err := C.Transport.Dial()
 	if err != nil {
 		return err
 	}
 
-	doneChan := make(chan error, 1)
+	go C.tunLoop(client)
+	go C.transportLoop(client)
 
-	go C.tunLoop(client, doneChan)
-	go C.transportLoop(client, doneChan)
+	if C.Config.SendHello {
+		log.Println("Sending hello")
+		client.Write(bizarre.HELLO_MESSAGE)
+	}
 
 	for {
 		select {
-		case err = <-doneChan:
+		case err = <-C.doneChan:
 			return err
 		}
 	}
 }
 
-func (C Client) tunLoop(client net.Conn, doneChan chan error) {
+func (C Client) tunLoop(client net.Conn) {
 	buffer := make([]byte, 4096)
 	for {
 		n, err := C.Interface.Read(buffer)
 		if err != nil {
 			log.Println("tunLoop: " + err.Error())
-			doneChan <- err
+			C.doneChan <- err
 			break
 		}
 
@@ -125,7 +131,7 @@ func (C Client) tunLoop(client net.Conn, doneChan chan error) {
 	}
 }
 
-func (C Client) transportLoop(client net.Conn, doneChan chan error) {
+func (C Client) transportLoop(client net.Conn) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
@@ -135,13 +141,28 @@ func (C Client) transportLoop(client net.Conn, doneChan chan error) {
 		n, err := client.Read(buffer)
 		if err != nil {
 			log.Println("transportLoop: " + err.Error())
-			doneChan <- err
+			C.doneChan <- err
 			break
+		}
+
+		// Neither an IPv4 nor an IPv6 packet
+		if buffer[0]&0xf0 != 0x40 && buffer[0]&0xf0 != 0x60 {
+			fmt.Printf("\nnet=>tun: service message, bytes=%d\n", n)
+			if bytes.Equal(buffer[:n], bizarre.HELLO_ACK_MESSAGE) {
+				if C.Config.SendHello {
+					log.Println("Received hello from server")
+				} else {
+					log.Println("Unexpected hello from server")
+				}
+			} else {
+				log.Println("Unknown service message!")
+			}
+			continue
 		}
 
 		pkt := bizarre.TryParse(buffer[:n])
 		if pkt == nil {
-			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
+			log.Println("Can't parse IP packet!")
 			continue
 		}
 		if bizarre.IsChatter(pkt) {
@@ -153,7 +174,7 @@ func (C Client) transportLoop(client net.Conn, doneChan chan error) {
 		_, err = C.Interface.Write(buffer[:n])
 		if err != nil {
 			log.Println("transportLoop: " + err.Error())
-			doneChan <- err
+			C.doneChan <- err
 			break
 		}
 

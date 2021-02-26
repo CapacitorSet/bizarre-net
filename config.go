@@ -7,6 +7,7 @@ import (
 
 type Config struct {
 	Transport        string
+	SendHello        bool
 	DropChatter      bool
 	SkipRoutingCheck bool
 	TUN              TUNConfig `toml:"tun"`
@@ -22,6 +23,7 @@ func ReadConfig(file string) (Config, toml.MetaData, error) {
 			Prefix:       "bizarre",
 			SetDefaultGW: true,
 		},
+		SendHello:        true,
 		DropChatter:      true,
 		SkipRoutingCheck: false,
 	}

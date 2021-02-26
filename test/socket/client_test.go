@@ -6,6 +6,7 @@ import (
 )
 
 const clientConfig = `Transport = "socket"
+SendHello = false
 
 [tun]
 Prefix = "testbizarre"
