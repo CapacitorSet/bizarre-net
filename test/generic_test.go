@@ -39,6 +39,3 @@ func TestUDP(t *testing.T) {
 	testServer(t, "udp")
 }
 
-func TestSocket(t *testing.T) {
-	testServer(t, "socket")
-}

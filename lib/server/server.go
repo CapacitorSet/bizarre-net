@@ -6,7 +6,6 @@ import (
 	"github.com/BurntSushi/toml"
 	bizarre "github.com/CapacitorSet/bizarre-net"
 	"github.com/CapacitorSet/bizarre-net/cat"
-	"github.com/CapacitorSet/bizarre-net/socket"
 	"github.com/CapacitorSet/bizarre-net/udp"
 	"log"
 	"net"
@@ -20,8 +19,6 @@ func getTransport(config bizarre.Config, md toml.MetaData) (bizarre.Transport, e
 		return udp.NewTransport(config, md)
 	case "cat":
 		return cat.NewServerTransport(config, md)
-	case "socket":
-		return socket.NewTransport(config, md)
 	default:
 		return nil, errors.New("no such transport: " + config.Transport)
 	}
