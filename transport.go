@@ -9,13 +9,13 @@ type Transport interface {
 	HasIPRoutingConflict(Interface) (bool, error)
 }
 
-// UDP-like transports: connectionless, stateless
+// DatagramTransport is a UDP-like transport: connectionless, stateless
 type DatagramTransport interface {
 	Transport
 	Listen() (net.PacketConn, error)
 }
 
-// TCP-like transports
+// StreamTransport is a TCP-like transport
 type StreamTransport interface {
 	Transport
 	Listen() (net.Listener, error)
