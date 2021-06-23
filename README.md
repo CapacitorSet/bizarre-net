@@ -59,21 +59,21 @@ When troubleshooting you might want to ask yourself these questions:
  - Are the packets being forwarded? Try sniffing the client TUN, the server TUN, and the Internet interface for the server.
  - Are the packets being masqueraded (i.e. do they come from the server IP and not from the tunnel IP when leaving the server)? Try sniffing the Internet interface for the server.
 
-When developing, using network namespaces allows for multiple "clean" environments (no firewalls or iptables rules). `test/server-setup.sh` followed by `test/client-setup.sh` creates an environment with a "server" namespace `srvns` and a "client" namespace `clins`, connected by a virtual Ethernet cable `seth0-veth0`, respectively with the address 192.168.1.2/24 and 192.168.1.3/24. With `test/server-launch.sh` and `test/client-launch.sh` you can then open a shell into those namespaces. Finally, [here](https://iximiuz.com/en/posts/container-networking-is-simple/)'s a good tutorial about network namespaces.
+When developing, using network namespaces allows for multiple "clean" environments (no firewalls or iptables rules). `go run tools/setup/main.go` creates an environment with a "server" namespace `srvns` and a "client" namespace `clins`, connected by a virtual Ethernet cable `seth0-veth0`, respectively with the address 192.168.1.2/24 and 192.168.1.3/24. With `tools/become-server.sh` and `tools/become-client.sh` you can then open a shell into those namespaces. Finally, [here](https://iximiuz.com/en/posts/container-networking-is-simple/)'s a good tutorial about network namespaces.
 
 ## Testing
 Set up the testing environment with `test/server-setup.sh` and `test/client-setup.sh`. Then:
 
 ```bash
 # First run this in a terminal
-test/server-launch.sh
+tools/become-server.sh
 cd test/udp
 sudo go test -run TestUDPServer
 ```
 
 ```bash
 # Then run this in another terminal
-test/client-launch.sh
+tools/become-client.sh
 cd test/udp
 sudo go test -run TestUDPClient
 ```
