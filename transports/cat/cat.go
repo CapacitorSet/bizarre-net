@@ -16,7 +16,11 @@ type transport struct {
 	clientConfig
 }
 
-func NewServerTransport(config bizarre.Config, md toml.MetaData) (transport, error) {
+func (T transport) IsReadable() bool { return true }
+
+func (T transport) IsWritable() bool { return true }
+
+func Server(config bizarre.Config, md toml.MetaData) (bizarre.PacketServer, error) {
 	var srvConfig serverConfig
 	err := md.PrimitiveDecode(config.Cat, &srvConfig)
 	if err != nil {
@@ -28,7 +32,7 @@ func NewServerTransport(config bizarre.Config, md toml.MetaData) (transport, err
 	return transport{serverConfig: srvConfig}, nil
 }
 
-func NewClientTransport(config bizarre.Config, md toml.MetaData) (transport, error) {
+func Client(config bizarre.Config, md toml.MetaData) (bizarre.ClientTransport, error) {
 	var cltConfig clientConfig
 	err := md.PrimitiveDecode(config.UDP, &cltConfig)
 	if err != nil {

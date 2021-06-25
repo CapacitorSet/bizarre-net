@@ -5,23 +5,33 @@ import (
 	"fmt"
 	"github.com/BurntSushi/toml"
 	bizarre "github.com/CapacitorSet/bizarre-net"
-	"github.com/CapacitorSet/bizarre-net/cat"
-	"github.com/CapacitorSet/bizarre-net/udp"
+	"github.com/CapacitorSet/bizarre-net/transports/cat"
+	"github.com/CapacitorSet/bizarre-net/transports/ping"
+	"github.com/CapacitorSet/bizarre-net/transports/udp"
 	"log"
 	"net"
 	"strings"
 	"sync"
 )
 
-func getTransport(config bizarre.Config, md toml.MetaData) (bizarre.Transport, error) {
+func getTransport(config bizarre.Config, md toml.MetaData) (bizarre.ServerTransport, error) {
+	var packetServer bizarre.PacketServer
+	var connServer bizarre.ConnServer
+	var err error
 	switch strings.ToLower(config.Transport) {
 	case "udp":
-		return udp.NewTransport(config, md)
+		packetServer, err = udp.Server(config, md)
+	case "ping":
+		packetServer, err = ping.Server(config, md)
 	case "cat":
-		return cat.NewServerTransport(config, md)
+		packetServer, err = cat.Server(config, md)
 	default:
-		return nil, errors.New("no such transport: " + config.Transport)
+		err = errors.New("no such transport: " + config.Transport)
 	}
+	if err != nil {
+		return bizarre.ServerTransport{}, err
+	}
+	return bizarre.ServerTransport{connServer, packetServer}, nil
 }
 
 type BaseServer struct {
@@ -43,8 +53,9 @@ func NewServer(configFile string, ioctlLock *sync.Mutex) (Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("%s up with IP %s.\n", iface.Name, iface.IPNet.String())
+	log.Printf("New interface: %s with IP %s\n", iface.Name, iface.IP.String())
 
+	log.Printf("Accepting connections via %s\n", config.Transport)
 	genericTransport, err := getTransport(config, md)
 	if err != nil {
 		return nil, err
@@ -54,21 +65,20 @@ func NewServer(configFile string, ioctlLock *sync.Mutex) (Server, error) {
 		Interface: iface,
 		Config:    config,
 	}
-	switch transport := genericTransport.(type) {
-	case bizarre.StreamTransport:
-		return StreamServer{
+	if transport := genericTransport.ConnServer; transport != nil {
+		return ConnServer{
 			BaseServer: base,
 			Transport:  transport,
 			clientConn: make(map[string]net.Conn),
 		}, nil
-	case bizarre.DatagramTransport:
-		return DatagramServer{
+	} else if transport := genericTransport.PacketServer; transport != nil {
+		return PacketServer{
 			BaseServer: base,
 			Transport:  transport,
 			clientAddr: make(map[string]net.Addr),
 		}, nil
-	default:
-		return nil, errors.New(fmt.Sprintf("transport %T implements neither StreamTransport nor DatagramTransport", transport))
+	} else {
+		return nil, errors.New(fmt.Sprintf("transport %T is neither a ConnServer nor a PacketServer", transport))
 	}
 }
 

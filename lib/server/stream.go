@@ -8,23 +8,23 @@ import (
 	"net"
 )
 
-type StreamServer struct {
+type ConnServer struct {
 	BaseServer
-	Transport bizarre.StreamTransport
+	Transport bizarre.ConnServer
 
 	// Maps the in-tunnel source IP of the host to its connection (used in Write for stream transports)
 	clientConn map[string]net.Conn
 }
 
-func (S StreamServer) Run() error {
+func (C ConnServer) Run() error {
 	serverDoneChan := make(chan error)
-	server, err := S.Transport.Listen()
+	server, err := C.Transport.Listen()
 	if err != nil {
 		return err
 	}
 	defer server.Close()
-	go S.serverLoop(server, serverDoneChan)
-	go S.tunStreamLoop()
+	go C.serverLoop(server, serverDoneChan)
+	go C.tunStreamLoop()
 
 	select {
 	case err := <-serverDoneChan:
@@ -33,7 +33,7 @@ func (S StreamServer) Run() error {
 }
 
 // Accepts connections for stream transports
-func (S StreamServer) serverLoop(listener net.Listener, serverDoneChan chan error) {
+func (C ConnServer) serverLoop(listener net.Listener, serverDoneChan chan error) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -41,12 +41,12 @@ func (S StreamServer) serverLoop(listener net.Listener, serverDoneChan chan erro
 			serverDoneChan <- err
 			break
 		}
-		go S.connLoop(conn, serverDoneChan)
+		go C.connLoop(conn, serverDoneChan)
 	}
 }
 
 // Handles packets from a datagram transport or from a TCP-like connection
-func (S StreamServer) connLoop(conn net.Conn, serverDoneChan chan error) {
+func (C ConnServer) connLoop(conn net.Conn, serverDoneChan chan error) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
@@ -76,8 +76,8 @@ func (S StreamServer) connLoop(conn net.Conn, serverDoneChan chan error) {
 			continue
 		}
 
-		err = S.processNetPkt(buffer[:n], func(tunnelSrc string) {
-			S.clientConn[tunnelSrc] = conn
+		err = C.processNetPkt(buffer[:n], func(tunnelSrc string) {
+			C.clientConn[tunnelSrc] = conn
 		})
 		if err != nil {
 			log.Println(err)
@@ -87,10 +87,10 @@ func (S StreamServer) connLoop(conn net.Conn, serverDoneChan chan error) {
 	}
 }
 
-func (S StreamServer) tunStreamLoop() {
+func (C ConnServer) tunStreamLoop() {
 	buffer := make([]byte, 4096)
 	for {
-		n, err := S.Interface.Read(buffer)
+		n, err := C.Interface.Read(buffer)
 		if err != nil {
 			log.Printf("tunLoop: " + err.Error())
 			continue
@@ -101,14 +101,14 @@ func (S StreamServer) tunStreamLoop() {
 			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 			continue
 		}
-		if S.Config.DropChatter && bizarre.IsChatter(pkt) {
+		if C.Config.DropChatter && bizarre.IsChatter(pkt) {
 			continue
 		}
 		fmt.Printf("\ntun=>net: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)
 
 		netFlow := pkt.NetworkLayer().NetworkFlow()
 		_, tunnelDst := netFlow.Endpoints()
-		conn := S.clientConn[tunnelDst.String()]
+		conn := C.clientConn[tunnelDst.String()]
 		if conn == nil {
 			fmt.Print("No client conn found, skipping\n")
 			continue

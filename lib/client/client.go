@@ -6,30 +6,33 @@ import (
 	"fmt"
 	"github.com/BurntSushi/toml"
 	bizarre "github.com/CapacitorSet/bizarre-net"
-	"github.com/CapacitorSet/bizarre-net/cat"
-	"github.com/CapacitorSet/bizarre-net/udp"
+	"github.com/CapacitorSet/bizarre-net/transports/cat"
+	"github.com/CapacitorSet/bizarre-net/transports/ping"
+	"github.com/CapacitorSet/bizarre-net/transports/udp"
 	"log"
 	"net"
 	"strings"
 	"sync"
 )
 
-func getTransport(config bizarre.Config, md toml.MetaData) (bizarre.Transport, error) {
+func getTransport(config bizarre.Config, md toml.MetaData) (bizarre.ClientTransport, error) {
 	switch strings.ToLower(config.Transport) {
 	case "udp":
-		return udp.NewTransport(config, md)
+		return udp.Client(config, md)
 	case "cat":
-		return cat.NewClientTransport(config, md)
+		return cat.Client(config, md)
+	case "ping":
+		return ping.Client(config, md)
 	default:
 		return nil, errors.New("no such transport: " + config.Transport)
 	}
 }
 
 type Client struct {
+	Transport bizarre.ClientTransport
 	bizarre.Interface
 	bizarre.Config
 	md toml.MetaData
-	bizarre.Transport
 
 	doneChan  chan error
 }
@@ -46,17 +49,18 @@ func NewClient(configPath string, ioctlLock *sync.Mutex) (Client, error) {
 	if err != nil {
 		return Client{}, err
 	}
-	log.Printf("%s up.\n", iface.Name)
+	log.Printf("New interface: %s with IP %s\n", iface.Name, iface.IP.String())
 
+	log.Printf("Connecting via %s\n", config.Transport)
 	transport, err := getTransport(config, md)
 	if err != nil {
 		return Client{}, err
 	}
 	return Client{
+		Transport: transport,
 		Interface: iface,
 		Config:    config,
 		md:        md,
-		Transport: transport,
 		doneChan:  make(chan error),
 	}, nil
 }
@@ -92,7 +96,10 @@ func (C Client) Run() error {
 
 	if C.Config.SendHello {
 		log.Println("Sending hello")
-		client.Write(bizarre.HELLO_MESSAGE)
+		_, err = client.Write(bizarre.HELLO_MESSAGE)
+		if err != nil {
+			return err
+		}
 	}
 
 	for {

@@ -4,19 +4,29 @@ import (
 	"net"
 )
 
-type Transport interface {
-	Dial() (net.Conn, error)
+type baseTransport interface {
 	HasIPRoutingConflict(Interface) (bool, error)
+	IsReadable() bool
+	IsWritable() bool
 }
 
-// DatagramTransport is a UDP-like transport: connectionless, stateless
-type DatagramTransport interface {
-	Transport
+type ClientTransport interface {
+	baseTransport
+	Dial() (net.Conn, error)
+}
+
+type ConnServer interface {
+	baseTransport
+	Listen() (net.Listener, error)
+}
+
+type PacketServer interface {
+	baseTransport
 	Listen() (net.PacketConn, error)
 }
 
-// StreamTransport is a TCP-like transport
-type StreamTransport interface {
-	Transport
-	Listen() (net.Listener, error)
+// ServerTransport is one of ConnServer or PacketServer.
+type ServerTransport struct {
+	ConnServer
+	PacketServer
 }

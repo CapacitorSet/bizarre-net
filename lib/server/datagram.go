@@ -8,23 +8,23 @@ import (
 	"net"
 )
 
-type DatagramServer struct {
+type PacketServer struct {
 	BaseServer
-	Transport bizarre.DatagramTransport
+	Transport bizarre.PacketServer
 
 	// Maps the in-tunnel source IP of the host to its transport address (used in WriteTo for datagram transports)
 	clientAddr map[string]net.Addr
 }
 
-func (D DatagramServer) Run() error {
+func (P PacketServer) Run() error {
 	serverDoneChan := make(chan error)
-	server, err := D.Transport.Listen()
+	server, err := P.Transport.Listen()
 	if err != nil {
 		return err
 	}
 	defer server.Close()
-	go D.serverLoop(server, serverDoneChan)
-	go D.tunLoop(server)
+	go P.serverLoop(server, serverDoneChan)
+	go P.tunLoop(server)
 
 	select {
 	case err := <-serverDoneChan:
@@ -33,7 +33,7 @@ func (D DatagramServer) Run() error {
 }
 
 // Handles packets from a datagram transport or from a TCP-like connection
-func (D DatagramServer) serverLoop(conn net.PacketConn, serverDoneChan chan error) {
+func (P PacketServer) serverLoop(conn net.PacketConn, serverDoneChan chan error) {
 	buffer := make([]byte, 1500)
 	for {
 		// By reading from the connection into the buffer, we block until there's
@@ -63,8 +63,8 @@ func (D DatagramServer) serverLoop(conn net.PacketConn, serverDoneChan chan erro
 			continue
 		}
 
-		err = D.processNetPkt(buffer[:n], func(tunnelSrc string) {
-			D.clientAddr[tunnelSrc] = transportSrc
+		err = P.processNetPkt(buffer[:n], func(tunnelSrc string) {
+			P.clientAddr[tunnelSrc] = transportSrc
 		})
 		if err != nil {
 			serverDoneChan <- err
@@ -73,10 +73,10 @@ func (D DatagramServer) serverLoop(conn net.PacketConn, serverDoneChan chan erro
 	}
 }
 
-func (D DatagramServer) tunLoop(server net.PacketConn) {
+func (P PacketServer) tunLoop(server net.PacketConn) {
 	buffer := make([]byte, 4096)
 	for {
-		n, err := D.Interface.Read(buffer)
+		n, err := P.Interface.Read(buffer)
 		if err != nil {
 			log.Printf("tunLoop: " + err.Error())
 			continue
@@ -87,14 +87,14 @@ func (D DatagramServer) tunLoop(server net.PacketConn) {
 			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
 			continue
 		}
-		if D.Config.DropChatter && bizarre.IsChatter(pkt) {
+		if P.Config.DropChatter && bizarre.IsChatter(pkt) {
 			continue
 		}
 		fmt.Printf("\ntun=>net: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)
 
 		netFlow := pkt.NetworkLayer().NetworkFlow()
 		_, tunnelDst := netFlow.Endpoints()
-		addr := D.clientAddr[tunnelDst.String()]
+		addr := P.clientAddr[tunnelDst.String()]
 		if addr == nil {
 			fmt.Print("No client addr found, skipping\n")
 			continue
