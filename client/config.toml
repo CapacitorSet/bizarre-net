@@ -1,11 +1,12 @@
-Transport = "socket"
+Transport = "udp"
 
 [tun]
 Prefix = "bizarre"
-IP = "20.20.20.2/24"
+IP = "10.0.0.2/24"
+SetDefaultGW = true
 
 [udp]
-IP = "192.168.1.2:1917"
+IP = "192.168.1.1:1917"
 
 [socket]
 Socket = "/tmp/bizarre.sock"

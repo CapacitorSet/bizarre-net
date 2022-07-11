@@ -34,16 +34,28 @@ func NSCreate() {
 }
 
 func VethCreate() {
-	fmt.Println("Creating veth...")
+	fmt.Println("Creating client-server veth...")
 	tools.IpExec("link add seth0 type veth peer name ceth0")
 	tools.IpExec("link set seth0 netns srvns")
 	tools.IpExec("link set ceth0 netns clins")
-	fmt.Printf("Server: configuring %s with IP %s...\n", boldWhite("seth0"), boldWhite("192.168.1.2"))
+	fmt.Printf("Server: configuring %s with IP %s...\n", boldWhite("seth0"), boldWhite("192.168.1.1"))
 	tools.IpExecNetns("srvns", "link set seth0 up")
-	tools.IpExecNetns("srvns", "addr add 192.168.1.2/24 dev seth0")
-	fmt.Printf("Client: configuring %s with IP %s...\n", boldWhite("ceth0"), boldWhite("192.168.1.3"))
+	tools.IpExecNetns("srvns", "addr add 192.168.1.1/24 dev seth0")
+	fmt.Printf("Client: configuring %s with IP %s...\n", boldWhite("ceth0"), boldWhite("192.168.1.2"))
 	tools.IpExecNetns("clins", "link set ceth0 up")
-	tools.IpExecNetns("clins", "addr add 192.168.1.3/24 dev ceth0")
+	tools.IpExecNetns("clins", "addr add 192.168.1.2/24 dev ceth0")
+
+	fmt.Println("Creating server-host veth...")
+	tools.IpExec("link add seth1 type veth peer name heth1")
+	tools.IpExec("link set seth1 netns srvns")
+	fmt.Printf("Server: configuring %s with IP %s...\n", boldWhite("seth1"), boldWhite("192.168.2.1"))
+	tools.IpExecNetns("srvns", "link set seth1 up")
+	tools.IpExecNetns("srvns", "addr add 192.168.2.1/24 dev seth1")
+	fmt.Printf("Host: configuring %s with IP %s...\n", boldWhite("heth1"), boldWhite("192.168.2.3"))
+	tools.IpExec("link set heth1 up")
+	tools.IpExec("addr add 192.168.2.3/24 dev heth1")
+	fmt.Printf("Server: configuring default route towards %s...\n", boldWhite("192.168.2.3"))
+	tools.IpExecNetns("srvns", "route add default via 192.168.2.3")
 }
 
 func main() {
