@@ -1,17 +1,32 @@
 package main
 
 import (
+	"flag"
+	"fmt"
+	"os"
+
 	"github.com/CapacitorSet/bizarre-net/lib/client"
-	"log"
 )
 
 func main() {
-	client, err := client.NewClient("config.toml", nil)
-	if err != nil {
-		log.Fatal(err)
+	flagset := flag.NewFlagSet("", flag.ExitOnError)
+	help := flagset.Bool("help", false, "Show usage information")
+	clientConf := client.NewConfigFromFlags(flagset)
+	flagset.Parse(os.Args[1:])
+
+	if (*help) {
+		flagset.PrintDefaults()
+		return
 	}
-	err = client.Run()
+
+	srv, err := client.NewClient(clientConf)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	err = srv.Run()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }

@@ -1,187 +1,134 @@
 package client
 
 import (
-	"bytes"
-	"errors"
+	"flag"
 	"fmt"
-	"github.com/BurntSushi/toml"
-	bizarre "github.com/CapacitorSet/bizarre-net"
-	"github.com/CapacitorSet/bizarre-net/transports/cat"
-	"github.com/CapacitorSet/bizarre-net/transports/ping"
-	"github.com/CapacitorSet/bizarre-net/transports/udp"
 	"log"
-	"net"
-	"strings"
-	"sync"
+	"os"
+
+	bizarre "github.com/CapacitorSet/bizarre-net"
+	"github.com/CapacitorSet/bizarre-net/sources"
+	"github.com/CapacitorSet/bizarre-net/transports"
 )
 
-func getTransport(config bizarre.Config, md toml.MetaData) (bizarre.ClientTransport, error) {
-	switch strings.ToLower(config.Transport) {
-	case "udp":
-		return udp.Client(config, md)
-	case "cat":
-		return cat.Client(config, md)
-	case "ping":
-		return ping.Client(config, md)
-	default:
-		return nil, errors.New("no such transport: " + config.Transport)
-	}
+var (
+	debug = log.New(os.Stdout, "[debug] ", log.Ldate | log.Ltime | log.Lshortfile)
+	info = log.New(os.Stdout, "[info]  ", log.Ldate | log.Ltime | log.Lshortfile)
+	warn = log.New(os.Stdout, "[warn]  ", log.Ldate | log.Ltime | log.Lshortfile)
+)
+
+type ClientConfig struct {
+	SourceConfig    sources.SourceConfig
+	TransportConfig transports.TransportConfig
+
+	DropChatter bool
+	SendHello bool
+}
+
+func NewConfigFromFlags(flags *flag.FlagSet) *ClientConfig {
+	config := ClientConfig{}
+	sources.PartialConfigFromFlags(&config.SourceConfig, flags) // todo: fix, we only need TUN config
+	transports.PartialConfigFromFlags(&config.TransportConfig, flags)
+	flags.BoolVar(&config.DropChatter, "drop-broadcast", true, "Do not send broadcast traffic")
+	// todo: figure out how to encode flag
+	config.SendHello = true
+	return &config
 }
 
 type Client struct {
-	Transport bizarre.ClientTransport
-	bizarre.Interface
-	bizarre.Config
-	md toml.MetaData
+	Source sources.Source
+	Transport transports.ClientTransport
 
-	doneChan  chan error
+	Config ClientConfig
+	errChan  chan error
 }
 
-// configPath is the path to the TOML config
-// ioctlLock is an optional mutex to lock ioctl (i.e. TUN creation) calls. It avoids crashes when launching eg. both
-//   a client and a server at the same time in tests
-func NewClient(configPath string, ioctlLock *sync.Mutex) (Client, error) {
-	config, md, err := bizarre.ReadConfig(configPath)
+// NewClient creates a Server object that contains the entire client-side logic.
+func NewClient(config *ClientConfig) (Client, error) {
+	source, err := sources.NewSource(config.SourceConfig)
 	if err != nil {
-		return Client{}, err
+		return Client{}, fmt.Errorf("creating source: %w", err)
 	}
-	iface, err := bizarre.CreateInterface(config.TUN, ioctlLock)
-	if err != nil {
-		return Client{}, err
-	}
-	log.Printf("New interface: %s with IP %s\n", iface.Name, iface.IP.String())
 
-	log.Printf("Connecting via %s\n", config.Transport)
-	transport, err := getTransport(config, md)
+	// Todo: check if endpoint IP is routed via TUN
+	transport, err := transports.NewClientTransport(config.TransportConfig)
 	if err != nil {
-		return Client{}, err
+		return Client{}, fmt.Errorf("creating transport: %w", err)
 	}
-	return Client{
-		Transport: transport,
-		Interface: iface,
-		Config:    config,
-		md:        md,
-		doneChan:  make(chan error),
-	}, nil
+
+	return Client{Source: source, Transport: transport, Config: *config, errChan: make(chan error)}, nil
 }
 
 func (C Client) Run() error {
-	if C.Config.TUN.SetDefaultGW {
-		log.Println("Routing all traffic through " + C.Interface.Name)
-		err := bizarre.SetDefaultGateway(C.Interface)
-		if err != nil {
-			return err
-		}
-		hasConflict, err := C.Transport.HasIPRoutingConflict(C.Interface)
-		if err != nil {
-			panic(err)
-			return err
-		}
-		if hasConflict {
-			if C.Config.SkipRoutingCheck {
-				log.Println("The IP endpoint is routed through the tunnel. Ignoring due to SkipRoutingCheck=true.")
-			} else {
-				log.Fatalln("The IP/host you are trying to use as an endpoint seems to be routed through the tunnel itself; this likely won't work. Review the routing table, or add SkipRoutingCheck=true in the config if you know what you're doing.")
-			}
-		}
-	}
+	sourceChan := make(chan []byte)
+	go C.Source.Start(sourceChan)
 
-	client, err := C.Transport.Dial()
-	if err != nil {
-		return err
-	}
+	// Maps the in-tunnel source IP of the host to its transport address (used in WriteTo for datagram transports)
+	// clientAddr := make(map[string]interface{})
 
-	go C.tunLoop(client)
-	go C.transportLoop(client)
+	transportChan := make(chan []byte)
+	go C.Transport.Listen(transportChan)
 
 	if C.Config.SendHello {
-		log.Println("Sending hello")
-		_, err = client.Write(bizarre.HELLO_MESSAGE)
+		debug.Println("Sending hello")
+		// todo: WriteToServer
+		_, err := C.Transport.Write(bizarre.HELLO_PREFIX)
 		if err != nil {
+			warn.Printf("Could not send hello: %s", err)
 			return err
 		}
 	}
 
 	for {
 		select {
-		case err = <-C.doneChan:
+		case packet := <-sourceChan:
+			if pkt := bizarre.TryParse(packet); pkt != nil {
+				if C.Config.DropChatter && bizarre.IsChatter(pkt) {
+					debug.Println("Dropping packet: chatter")
+					continue
+				}
+				debug.Printf("Source received: %s type=%s bytes=%d", bizarre.FlowString(pkt), bizarre.LayerString(pkt), len(packet))
+			} else if packet[0] == sources.CMD_EXEC_CMD_HEADER {
+				debug.Printf("Source received: CmdExec packet bytes=%d", len(packet)-1)
+			} else {
+				print_len := 10
+				if len(packet) < print_len {
+					print_len = len(packet)
+				}
+				warn.Printf("Dropping packet: not an IP packet (begins with %x)", packet[:print_len])
+				continue
+			}
+			// todo: WriteToServer
+			n, err := C.Transport.Write(packet)
+			if err != nil {
+				warn.Println("Error writing packet to transport: " + err.Error())
+				continue
+			}
+			debug.Printf("Wrote %d bytes to transport", n)
+		case packet := <-transportChan:
+			if pkt := bizarre.TryParse(packet); pkt != nil {
+				if C.Config.DropChatter && bizarre.IsChatter(pkt) {
+					continue
+				}
+
+				debug.Printf("Transport received: %s type=%s bytes=%d", bizarre.FlowString(pkt), bizarre.LayerString(pkt), len(packet))
+
+				err := C.Source.Write(packet)
+				if err != nil {
+					warn.Println("Error writing packet to TUN: " + err.Error())
+					return err
+				}
+				debug.Printf("Wrote %d bytes to TUN", len(packet))
+			} else if hello := bizarre.TryParseHelloAck(packet); hello {
+				debug.Println("net=>tun: hello-ack")
+				warn.Println("todo: process hello-ack")
+			} else if packet[0] == sources.CMD_EXEC_STDOUT_HEADER {
+				info.Printf("Command output: %s", packet[1:])
+			} else {
+				warn.Printf("Unknown packet received from transport! %d bytes, starts with %x", len(packet), packet[:10])
+			}
+		case err := <-C.errChan:
 			return err
 		}
-	}
-}
-
-func (C Client) tunLoop(client net.Conn) {
-	buffer := make([]byte, 4096)
-	for {
-		n, err := C.Interface.Read(buffer)
-		if err != nil {
-			log.Println("tunLoop: " + err.Error())
-			C.doneChan <- err
-			break
-		}
-
-		pkt := bizarre.TryParse(buffer[:n])
-		if pkt == nil {
-			log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
-			continue
-		}
-		if C.Config.DropChatter && bizarre.IsChatter(pkt) {
-			continue
-		}
-		fmt.Printf("\ntun=>net: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)
-
-		client.Write(buffer[:n])
-		fmt.Printf("tun=>net: bytes=%d\n", n)
-	}
-}
-
-func (C Client) transportLoop(client net.Conn) {
-	buffer := make([]byte, 1500)
-	for {
-		// By reading from the connection into the buffer, we block until there's
-		// new content in the socket that we're listening for new packets.
-
-		// Note: `buffer` is not being reset between runs, so you must read only `n` bytes.
-		n, err := client.Read(buffer)
-		if err != nil {
-			log.Println("transportLoop: " + err.Error())
-			C.doneChan <- err
-			break
-		}
-
-		// Neither an IPv4 nor an IPv6 packet
-		if buffer[0]&0xf0 != 0x40 && buffer[0]&0xf0 != 0x60 {
-			fmt.Printf("\nnet=>tun: service message, bytes=%d\n", n)
-			if bytes.Equal(buffer[:n], bizarre.HELLO_ACK_MESSAGE) {
-				if C.Config.SendHello {
-					log.Println("Received hello from server")
-				} else {
-					log.Println("Unexpected hello from server")
-				}
-			} else {
-				log.Println("Unknown service message!")
-			}
-			continue
-		}
-
-		pkt := bizarre.TryParse(buffer[:n])
-		if pkt == nil {
-			log.Println("Can't parse IP packet!")
-			continue
-		}
-		if bizarre.IsChatter(pkt) {
-			continue
-		}
-		fmt.Printf("\nnet=>tun: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), n)
-
-		// todo: handle iface write fails gracefully if not an IP packet (buffer[0] & 0xF0 != 0x4, 0x6)
-		_, err = C.Interface.Write(buffer[:n])
-		if err != nil {
-			log.Println("transportLoop: " + err.Error())
-			C.doneChan <- err
-			break
-		}
-
-		fmt.Printf("net=>tun: bytes=%d\n", n)
 	}
 }

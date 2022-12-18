@@ -2,6 +2,7 @@ package bizarre_net
 
 import (
 	"errors"
+
 	"github.com/BurntSushi/toml"
 )
 

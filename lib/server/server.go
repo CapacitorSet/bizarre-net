@@ -1,110 +1,150 @@
 package server
 
 import (
-	"errors"
+	"flag"
 	"fmt"
-	"github.com/BurntSushi/toml"
-	bizarre "github.com/CapacitorSet/bizarre-net"
-	"github.com/CapacitorSet/bizarre-net/transports/cat"
-	"github.com/CapacitorSet/bizarre-net/transports/ping"
-	"github.com/CapacitorSet/bizarre-net/transports/udp"
 	"log"
-	"net"
-	"strings"
-	"sync"
+	"os"
+	"os/exec"
+
+	bizarre "github.com/CapacitorSet/bizarre-net"
+	"github.com/CapacitorSet/bizarre-net/sources"
+	"github.com/CapacitorSet/bizarre-net/transports"
 )
 
-func getTransport(config bizarre.Config, md toml.MetaData) (bizarre.ServerTransport, error) {
-	var packetServer bizarre.PacketServer
-	var connServer bizarre.ConnServer
-	var err error
-	switch strings.ToLower(config.Transport) {
-	case "udp":
-		packetServer, err = udp.Server(config, md)
-	case "ping":
-		packetServer, err = ping.Server(config, md)
-	case "cat":
-		packetServer, err = cat.Server(config, md)
-	default:
-		err = errors.New("no such transport: " + config.Transport)
-	}
-	if err != nil {
-		return bizarre.ServerTransport{}, err
-	}
-	return bizarre.ServerTransport{connServer, packetServer}, nil
+var (
+	debug = log.New(os.Stdout, "[debug] ", log.Ldate | log.Ltime | log.Lshortfile)
+	info = log.New(os.Stdout, "[info]  ", log.Ldate | log.Ltime | log.Lshortfile)
+	warn = log.New(os.Stdout, "[warn]  ", log.Ldate | log.Ltime | log.Lshortfile)
+)
+
+type ServerConfig struct {
+	SourceConfig    sources.SourceConfig
+	TransportConfig transports.TransportConfig
+
+	DropChatter bool
 }
 
-type BaseServer struct {
-	bizarre.Interface
-	bizarre.Config
-}
-type Server interface {
-	Run() error
-}
-
-// ioctlLock is an optional mutex to lock ioctl (i.e. TUN creation) calls. It avoids crashes when launching eg. both
-//   a client and a server at the same time in tests
-func NewServer(configFile string, ioctlLock *sync.Mutex) (Server, error) {
-	config, md, err := bizarre.ReadConfig(configFile)
-	if err != nil {
-		return nil, err
-	}
-	iface, err := bizarre.CreateInterface(config.TUN, ioctlLock)
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("New interface: %s with IP %s\n", iface.Name, iface.IP.String())
-
-	log.Printf("Accepting connections via %s\n", config.Transport)
-	genericTransport, err := getTransport(config, md)
-	if err != nil {
-		return nil, err
-	}
-
-	base := BaseServer{
-		Interface: iface,
-		Config:    config,
-	}
-	if transport := genericTransport.ConnServer; transport != nil {
-		return ConnServer{
-			BaseServer: base,
-			Transport:  transport,
-			clientConn: make(map[string]net.Conn),
-		}, nil
-	} else if transport := genericTransport.PacketServer; transport != nil {
-		return PacketServer{
-			BaseServer: base,
-			Transport:  transport,
-			clientAddr: make(map[string]net.Addr),
-		}, nil
-	} else {
-		return nil, errors.New(fmt.Sprintf("transport %T is neither a ConnServer nor a PacketServer", transport))
-	}
+func NewConfigFromFlags(flags *flag.FlagSet) *ServerConfig {
+	config := ServerConfig{}
+	sources.PartialConfigFromFlags(&config.SourceConfig, flags) // todo: fix, we only need TUN config
+	transports.PartialConfigFromFlags(&config.TransportConfig, flags)
+	flags.BoolVar(&config.DropChatter, "drop-broadcast", true, "Do not send broadcast traffic")
+	return &config
 }
 
-func (S BaseServer) processNetPkt(packet []byte, registerClient func(string)) error {
-	pkt := bizarre.TryParse(packet)
-	if pkt == nil {
-		log.Println("Skipping packet, can't parse as IPv4 nor IPv6")
-		return nil
-	}
+type Server struct {
+	TUN       sources.TUNSource
+	Transport transports.ServerTransport
 
-	if bizarre.IsChatter(pkt) {
-		return nil
-	}
+	Config  ServerConfig
+	errChan chan error
+}
 
-	// Inspect the source address so packet responses (syn-acks, etc) can be sent to the host
-	netFlow := pkt.NetworkLayer().NetworkFlow()
-	tunnelSrc, _ := netFlow.Endpoints()
-	registerClient(tunnelSrc.String())
-
-	fmt.Printf("\nnet=>tun: %s %s bytes=%d\n", bizarre.FlowString(pkt), bizarre.LayerString(pkt), len(packet))
-
-	_, err := S.Interface.Write(packet)
+// NewServer creates a Server object that contains the entire server-side logic.
+func NewServer(config *ServerConfig) (Server, error) {
+	tun, err := sources.CreateTUN(config.SourceConfig.TUNConfig)
 	if err != nil {
-		log.Print("sendto: ", err)
-		return err
+		return Server{}, fmt.Errorf("creating source: %w", err)
 	}
-	fmt.Printf("net=>tun: bytes=%d\n", len(packet))
-	return nil
+
+	transport, err := transports.NewServerTransport(config.TransportConfig)
+	if err != nil {
+		return Server{}, fmt.Errorf("creating transport: %w", err)
+	}
+
+	return Server{TUN: tun, Transport: transport, Config: *config, errChan: make(chan error)}, nil
+}
+
+func (S *Server) Run() error {
+	tunChan := make(chan []byte)
+	go S.TUN.Start(tunChan)
+
+	// Maps the in-tunnel source IP of the host to its transport address (used in WriteTo for datagram transports)
+	clientAddr := make(map[string]interface{})
+
+	transportChan := make(chan transports.Packet)
+	go S.Transport.Listen(transportChan)
+
+	for {
+		select {
+		case packet := <-tunChan:
+			pkt := bizarre.TryParse(packet)
+			if pkt == nil {
+				warn.Println("Dropping packet: not an IP packet")
+				continue
+			}
+			if S.Config.DropChatter && bizarre.IsChatter(pkt) {
+				debug.Println("Dropping packet: chatter")
+				continue
+			}
+			debug.Printf("TUN received: %s type=%s bytes=%d", bizarre.FlowString(pkt), bizarre.LayerString(pkt), len(packet))
+			netFlow := pkt.NetworkLayer().NetworkFlow()
+			_, tunnelDst := netFlow.Endpoints()
+			addr := clientAddr[tunnelDst.String()]
+			if addr == nil {
+				warn.Println("Dropping packet: no client found for this flow")
+				continue
+			}
+			n, err := S.Transport.WriteTo(packet, addr)
+			if err != nil {
+				warn.Println("Error writing packet to transport: " + err.Error())
+				continue
+			}
+			debug.Printf("Wrote %d bytes to transport", n)
+
+		case packet := <-transportChan:
+			if pkt := bizarre.TryParse(packet.Payload); pkt != nil {
+				if S.Config.DropChatter && bizarre.IsChatter(pkt) {
+					continue
+				}
+
+				// Inspect the source address so packet responses (syn-acks, etc) can be sent to the host
+				netFlow := pkt.NetworkLayer().NetworkFlow()
+				tunnelSrc, _ := netFlow.Endpoints()
+				clientAddr[tunnelSrc.String()] = packet.Address
+
+				debug.Printf("Transport received: %s type=%s bytes=%d", bizarre.FlowString(pkt), bizarre.LayerString(pkt), len(packet.Payload))
+
+				_, err := S.TUN.TUN.Write(packet.Payload)
+				if err != nil {
+					warn.Println("Error writing packet to TUN: " + err.Error())
+					return err
+				}
+				debug.Printf("Wrote %d bytes to TUN", len(packet.Payload))
+			} else if hello := bizarre.TryParseHello(packet.Payload); hello != nil {
+				// todo: read credentials here
+				debug.Println("net=>tun: hello (replying with hello-ack)")
+				warn.Println("todo: process hello")
+				S.Transport.WriteTo(bizarre.HELLO_ACK_MESSAGE, packet.Address)
+				/*
+					_, err := conn.WriteTo(HELLO_ACK_MESSAGE, transportSrc)
+					if err != nil {
+						serverDoneChan <- err
+						break
+					}
+				*/
+			} else if packet.Payload[0] == sources.CMD_EXEC_CMD_HEADER {
+				command := string(packet.Payload[1:])
+				debug.Printf("net=>tun: command %q", command)
+				go func(command string) {
+					info.Printf("Executing command %q", command)
+					cmdObj := exec.Command("bash", "-c", command)
+					cmdObj.Stdout = sources.WithStdoutHeader(S.Transport.WriterTo(packet.Address))
+					err := cmdObj.Start()
+					if err != nil {
+						warn.Printf("Running %q: %s", command, err)
+					}
+					err = cmdObj.Wait()
+					if err != nil {
+						warn.Printf("Running %q: %s", command, err)
+					}
+				}(command)
+			} else {
+				warn.Printf("Unknown packet received from transport! %d bytes, starts with %x", len(packet.Payload), packet.Payload[:10])
+			}
+		case err := <-S.errChan:
+			return err
+		}
+	}
 }

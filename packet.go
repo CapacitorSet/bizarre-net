@@ -2,35 +2,35 @@ package bizarre_net
 
 import (
 	"fmt"
+	"net"
+
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"net"
 )
 
-// Returns the packet (or nil if not an IP packet), and whether it is IPv6
+// TryParse returns a parsed IP packet
 func TryParse(packet []byte) gopacket.Packet {
 	// Try parsing as IPv4, then as IPv6, then skip
-	pkt := gopacket.NewPacket(packet, layers.LayerTypeIPv4, gopacket.Default)
-	if pkt.ErrorLayer() == nil {
+	if pkt := gopacket.NewPacket(packet, layers.LayerTypeIPv4, gopacket.Default); pkt.ErrorLayer() == nil {
 		return pkt
 	}
-	pkt = gopacket.NewPacket(packet, layers.LayerTypeIPv6, gopacket.Default)
-	if pkt.ErrorLayer() == nil {
+	if pkt := gopacket.NewPacket(packet, layers.LayerTypeIPv6, gopacket.Default); pkt.ErrorLayer() == nil {
 		return pkt
 	}
 	return nil
 }
 
-// Returns a string like "IPv4 TCP Payload"
+// LayerString returns the specific type of packet (eg. "TCP", "ICMPv6RouterSolicitation")
 func LayerString(pkt gopacket.Packet) string {
-	if len(pkt.Layers()) == 0 {
+	layers := pkt.Layers()
+	if len(layers) == 0 {
 		return ""
 	}
-	ret := ""
-	for _, layer := range pkt.Layers() {
-		ret += " " + layer.LayerType().String()
+	finalLayer := layers[len(layers)-1]
+	if finalLayer.LayerType() == gopacket.LayerTypePayload {
+		finalLayer = layers[len(layers)-2]
 	}
-	return ret[1:]
+	return finalLayer.LayerType().String()
 }
 
 func FlowString(pkt gopacket.Packet) string {
@@ -45,15 +45,15 @@ func FlowString(pkt gopacket.Packet) string {
 			tcpFlags = tcpFlags + "A"
 		}
 		if tcpFlags != "" {
-			flags = " [" + tcpFlags + "]"
+			flags = " flags=" + tcpFlags
 		}
-		srcPort = tcp.SrcPort.String()
-		dstPort = tcp.DstPort.String()
+		srcPort = fmt.Sprint(uint16(tcp.SrcPort))
+		dstPort = fmt.Sprint(uint16(tcp.DstPort))
 		protoName = "tcp"
 	} else if udpLayer := pkt.Layer(layers.LayerTypeUDP); udpLayer != nil {
 		udp, _ := udpLayer.(*layers.UDP)
-		srcPort = udp.SrcPort.String()
-		dstPort = udp.DstPort.String()
+		srcPort = fmt.Sprint(uint16(udp.SrcPort))
+		dstPort = fmt.Sprint(uint16(udp.DstPort))
 		protoName = "udp"
 	} else if pkt.Layer(layers.LayerTypeICMPv4) != nil || pkt.Layer(layers.LayerTypeICMPv6) != nil {
 		protoName = "icmp"
@@ -68,7 +68,7 @@ func FlowString(pkt gopacket.Packet) string {
 		srcStr = src.String()
 		dstStr = dst.String()
 	}
-	return fmt.Sprintf("%s/%s => %s/%s%s", srcStr, protoName, dstStr, protoName, flags)
+	return fmt.Sprintf("%s => %s proto=%s%s", srcStr, dstStr, protoName, flags)
 }
 
 func IsChatter(packet gopacket.Packet) bool {
