@@ -106,6 +106,7 @@ func (C Client) Run() error {
 			}
 			debug.Printf("Wrote %d bytes to transport", n)
 		case packet := <-transportChan:
+			debug.Printf("Received %d bytes (starting with %x)", len(packet), packet[:10])
 			if pkt := bizarre.TryParse(packet); pkt != nil {
 				if C.Config.DropChatter && bizarre.IsChatter(pkt) {
 					continue

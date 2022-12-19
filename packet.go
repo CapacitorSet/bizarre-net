@@ -10,6 +10,10 @@ import (
 
 // TryParse returns a parsed IP packet
 func TryParse(packet []byte) gopacket.Packet {
+	// Fast check; it also "fixes" IPv6 detection (Gopacket parses a packet starting with CE 36 2E 30 38 33 3A 39 as IPv6)
+	if (packet[0] & 0xF0) != 0x60 && (packet[0] & 0xF0) != 0x40 {
+		return nil
+	}
 	// Try parsing as IPv4, then as IPv6, then skip
 	if pkt := gopacket.NewPacket(packet, layers.LayerTypeIPv4, gopacket.Default); pkt.ErrorLayer() == nil {
 		return pkt
