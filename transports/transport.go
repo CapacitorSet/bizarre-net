@@ -32,7 +32,7 @@ type TransportConfig struct {
 func PartialConfigFromFlags(config *TransportConfig, flags *flag.FlagSet) {
 	flags.StringVar(&config.DNSConfig.Endpoint, "dns-address", "", "DNS server address")
 	flags.IntVar(&config.DNSConfig.Port, "dns-port", 53, "DNS server port")
-	flags.StringVar(&config.DNSConfig.RootDomain, "dns-root", ".biz", "DNS root domain including TLD")
+	flags.StringVar(&config.DNSConfig.RootDomain, "dns-root", "biz", "DNS root domain including TLD")
 	flags.StringVar(&config.UDPConfig.Endpoint, "udp-address", "", "UDP server address")
 }
 
