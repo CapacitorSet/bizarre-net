@@ -5,6 +5,11 @@ import (
 	"net"
 )
 
+var (
+	_ ServerTransport = (*UDPServerTransport)(nil)
+	_ ClientTransport = (*UDPClientTransport)(nil)
+)
+
 type UDPConfig struct {
 	Endpoint string // The UDP address to connect to
 }

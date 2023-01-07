@@ -25,10 +25,14 @@ type ClientTransport interface {
 
 type TransportConfig struct {
 	UDPConfig UDPConfig
+	DNSConfig DNSConfig
 }
 
 // PartialConfigFromFlags binds a flagset to a TransportConfig struct, so that the config is filled upon parsing the flags.
 func PartialConfigFromFlags(config *TransportConfig, flags *flag.FlagSet) {
+	flags.StringVar(&config.DNSConfig.Endpoint, "dns-address", "", "DNS server address")
+	flags.IntVar(&config.DNSConfig.Port, "dns-port", 53, "DNS server port")
+	flags.StringVar(&config.DNSConfig.RootDomain, "dns-root", ".biz", "DNS root domain including TLD")
 	flags.StringVar(&config.UDPConfig.Endpoint, "udp-address", "", "UDP server address")
 }
 
@@ -41,6 +45,13 @@ func NewServerTransport(config TransportConfig) (ServerTransport, error) {
 		}
 		log.Printf("Listening on UDP with IP %s\n", config.UDPConfig.Endpoint)
 		return &udp, nil
+	} else if config.DNSConfig.Port != 0 {
+		dns, err := CreateDNSServer(config.DNSConfig)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("Listening on DNS with port %d\n", config.DNSConfig.Port)
+		return &dns, nil
 	} else {
 		return nil, fmt.Errorf("no transport selected")
 	}
@@ -53,7 +64,14 @@ func NewClientTransport(config TransportConfig) (ClientTransport, error) {
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("Listening on UDP with IP %s\n", config.UDPConfig.Endpoint)
+		log.Printf("Using UDP transport with IP %s\n", config.UDPConfig.Endpoint)
+		return &udp, nil
+	} else if config.DNSConfig.Endpoint != "" {
+		udp, err := CreateDNSClient(config.DNSConfig)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("Using DNS transport with IP %s\n", config.DNSConfig.Endpoint)
 		return &udp, nil
 	} else {
 		return nil, fmt.Errorf("no transport selected")
